@@ -14,7 +14,7 @@ inMenu = False
 
 #region ### File Handling Setup ###
 import os, sys
-os.chdir(os.path.dirname(sys.argv[0])) # change working directory to script's own directory
+#os.chdir(os.path.dirname(sys.argv[0])) # change working directory to script's own directory
 for file in os.listdir(os.getcwd() + "/SF2"):
 	if file[-4:].lower() == ".sf2":
 		SF2paths.update({file[:-4]:(os.getcwd() + "/SF2/" + file)})
@@ -51,25 +51,21 @@ def switchSF2(sf2path:str, channel: int, bank: int, patch: int):
 	currChannel = channel
 	currBank = bank
 	currPatch = patch
-	currPatchName = fs.channel_info(currChannel)[3].decode("utf-8")
 	fs.program_select(currChannel, sfid, currBank, currPatch)
+	currPatchName = fs.channel_info(currChannel)[3]
 
 #endregion ### End SF2 Handling Setup ###
 
 #region ### FluidSynth Setup ###
-fs = fluidsynth.Synth()
+fs = fluidsynth.Synth(gain=1, samplerate=48000)
 fs.setting('synth.polyphony', 32)
-fs.setting('audio.period-size', 6)
+#fs.setting('audio.period-size', 6)
 fs.setting('audio.periods', 4)
 fs.setting('audio.realtime-prio', 99)
 
-fs.start(driver='alsa', device='hw:Device,0', midi_driver='alsa_seq')
+fs.start(driver='alsa', midi_driver='alsa_seq')
 
-#sfid = fs.sfload(currSF2Path)
-switchSF2(currSF2Path, 9, 128, 0)
-#fs.program_select(0, sfid, 0, 0)
-switchSF2(currSF2Path, 0, 0, 0)
-#fs.program_select(9, sfid, 128, 0)
+switchSF2(currSF2Path, 0, 0, 1)
 
 def patchInc():
 	'''
@@ -108,19 +104,11 @@ def patchDec():
 #endregion ### End FluidSynth Setup ###
 
 #region ### LCD Setup ###
-try:
-	import RPi.GPIO as GPIO
-except ImportError:
-	import sys
-	import FakeRPi
-	sys.modules['RPi'] = FakeRPi
-	import RPi.GPIO as GPIO
 
-from RPLCD.gpio import CharLCD
-from RPLCD.codecs import A02Codec as LCDCodec #Change to A00 codec if you want to use japanese, and change it on the next line too
-
-lcd = CharLCD(pin_rs=22, pin_e=23, pins_data=[9, 25, 11, 8], cols=16, rows=2, numbering_mode=GPIO.BCM, charmap="A02")
-#GPIO.BOARD: pin_rs=15, pin_e=16, pins_data=[21, 22, 23, 24]
+import R64.GPIO as GPIO
+from RPLCD.i2c import CharLCD
+from RPLCD.codecs import A02Codec as LCDCodec
+lcd = CharLCD(i2c_expander='PCF8574', address=0x27, port=1, cols=16, rows=2, dotsize=8, auto_linebreaks=True)
 
 def writeLCD(firstline: str, secondline: str):
 	'''
@@ -200,12 +188,8 @@ def my_deccallback(scale_position):
 def my_swcallback():
 	menuManager("Sw")
 
-my_encoder = pyky040.Encoder(CLK=17, DT=18, SW=27)
-#GPIO.BOARD: CLK=11, DT=12, SW=13
-
-
+my_encoder = pyky040.Encoder(CLK=22, DT=23, SW=24)
 my_encoder.setup(scale_min=1, scale_max=100, step=1, loop=True, inc_callback=my_inccallback, dec_callback=my_deccallback, sw_callback=my_swcallback)
-
 
 #endregion ### End Rotary Encoder Setup ###
 
@@ -225,7 +209,7 @@ def bgBankPatchCheck():
 		if ( (currBank != fs.channel_info(currChannel)[1]) | (currPatch != fs.channel_info(currChannel)[2]) ):
 			currBank = fs.channel_info(currChannel)[1]
 			currPatch = fs.channel_info(currChannel)[2]
-			currPatchName = fs.channel_info(currChannel)[3].decode("utf-8")
+			currPatchName = fs.channel_info(currChannel)[3]
 			if not inMenu:
 				# change the text too
 				writeLCD(currPatchName, 'Bank ' + str(currBank) + ' Patch ' + str(currPatch))
@@ -239,7 +223,7 @@ bg_thread.start()
 
 #bankpatchlist = getSF2bankpatchlist(currSF2Path)
 
-currPatchName = fs.channel_info(currChannel)[3].decode("utf-8")
+currPatchName = fs.channel_info(currChannel)[3]
 writeLCD(currPatchName, 'Bank ' + str(currBank) + ' Patch ' + str(currPatch))
 
 my_encoder.watch()
