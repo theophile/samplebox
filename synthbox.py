@@ -19,7 +19,7 @@ for file in os.listdir(os.getcwd() + "/SF2"):
 	if file[-4:].lower() == ".sf2":
 		SF2paths.update({file[:-4]:(os.getcwd() + "/SF2/" + file)})
 #print(SF2paths)
-currSF2Path = SF2paths["GeneralUser GS v1.471"]
+currSF2Path = SF2paths[list(SF2paths.keys())[0]]
 
 #endregion ### File Handling Setup ###
 
@@ -75,6 +75,7 @@ def patchInc():
 	currBank = fs.channel_info(currChannel)[1]
 	currPatch = fs.channel_info(currChannel)[2]
 	currIndex = bankpatchlist.index([currBank, currPatch])
+	currPatchName = fs.channel_info(currChannel)[3]
 
 	if (currIndex + 1) == len(bankpatchlist):
 		currIndex = 0
@@ -83,6 +84,7 @@ def patchInc():
 	[currBank, currPatch] = bankpatchlist[currIndex]
 	fs.program_select(currChannel, sfid, currBank, currPatch)
 	print(fs.channel_info(currChannel))
+	display_message(fs.channel_info(currChannel)[3] + '\nBank ' + str(fs.channel_info(currChannel)[1]) + ' Patch ' + str(fs.channel_info(currChannel)[2]), static=True)
 
 def patchDec():
 	'''
@@ -92,6 +94,7 @@ def patchDec():
 	currBank = fs.channel_info(currChannel)[1]
 	currPatch = fs.channel_info(currChannel)[2]
 	currIndex = bankpatchlist.index([currBank, currPatch])
+	currPatchName = fs.channel_info(currChannel)[3]
 
 	if (currIndex - 1) == -1:
 		currIndex = len(bankpatchlist) - 1
@@ -100,21 +103,21 @@ def patchDec():
 	[currBank, currPatch] = bankpatchlist[currIndex]
 	fs.program_select(currChannel, sfid, currBank, currPatch)
 	print(fs.channel_info(currChannel))
+	display_message(fs.channel_info(currChannel)[3] + '\nBank ' + str(fs.channel_info(currChannel)[1]) + ' Patch ' + str(fs.channel_info(currChannel)[2]), static=True)
 
 #endregion ### End FluidSynth Setup ###
 
 #region ### LCD Setup ###
 
-import R64.GPIO as GPIO
-from RPLCD.i2c import CharLCD
-from RPLCD.codecs import A02Codec as LCDCodec
-lcd = CharLCD(i2c_expander='PCF8574', address=0x27, port=1, cols=16, rows=2, dotsize=8, auto_linebreaks=True)
+from rpilcdmenu import *
+from rpilcdmenu.items import *
 
+menu = RpiLCDMenu(scrolling_menu=True)
+
+'''
 def writeLCD(firstline: str, secondline: str):
-	'''
-	Writes 2 lines to a 16x2 LCD.
-	Shortens them by removing vowels if needed.
-	'''
+	# Writes 2 lines to a 16x2 LCD.
+	# Shortens them by removing vowels if needed.
 	global lastLCDStr
 	#lcd.clear()
 	if len(firstline) > 16:
@@ -143,11 +146,34 @@ def writeLCD(firstline: str, secondline: str):
 
 	lastLCDStr = [firstline, secondline]
 	#lcd.write_string(firstline + '\n\r' + secondline)
+'''
+
+def display_message(message, clear=False, static=False, autoscroll=False):
+        # clear will clear the display and not render anything after (ie for shut down)
+        # static will leave the message on screen, assuming nothing renders over it immedaitely after
+        # autoscroll will scroll the message then leave on screen
+        # the default will show the message, then render the menu after 2 secondss
+
+        if menu != None:
+            # self.menu.clearDisplay()
+            if clear == True:
+                menu.message(message)
+                time.sleep(2)
+                return menu.clearDisplay()
+            elif static == True:
+                return menu.message(message, autoscroll=False)
+            elif autoscroll == True:
+                return menu.message(message, autoscroll=True)
+            else:
+                menu.message(message)
+                time.sleep(2)
+                return menu.render()
+        return
 
 #endregion ### End LCD Setup ###
 
 #region ### Menu Management Setup ###
-
+'''
 menu = {
 	"Bank/Patch Num":"",
 	"Effects":{
@@ -162,6 +188,7 @@ menu = {
 		"Reconnect Audio Device":"",
 		"Shutdown Safely":"",
 		"Restart":""}}
+'''
 
 def menuManager(command: str):
 	pass
@@ -212,11 +239,11 @@ def bgBankPatchCheck():
 			currPatchName = fs.channel_info(currChannel)[3]
 			if not inMenu:
 				# change the text too
-				writeLCD(currPatchName, 'Bank ' + str(currBank) + ' Patch ' + str(currPatch))
-		time.sleep(0.1)
+				display_message(currPatchName + '\nBank ' + str(currBank) + ' Patch ' + str(currPatch), static=True)
+			time.sleep(0.1)
 
 bg_thread = threading.Thread(target=bgBankPatchCheck, daemon=True)
-bg_thread.start()
+#bg_thread.start()
 
 #endregion ### End Background Bank & Patch Setup ###
 
@@ -224,7 +251,8 @@ bg_thread.start()
 #bankpatchlist = getSF2bankpatchlist(currSF2Path)
 
 currPatchName = fs.channel_info(currChannel)[3]
-writeLCD(currPatchName, 'Bank ' + str(currBank) + ' Patch ' + str(currPatch))
+message = currPatchName + "\n" + 'Bank ' + str(currBank) + ' Patch ' + str(currPatch)
+display_message(currPatchName + '\nBank ' + str(currBank) + ' Patch ' + str(currPatch), static=True)
 
 my_encoder.watch()
 
