@@ -207,10 +207,43 @@ menu = {
 		"Restart":""}}
 '''
 
+def menuManager():
+    function_item1 = FunctionItem("nextSF2 Function", nextSF2, '')
+    function_item2 = FunctionItem("Volume", fooFunction, [2])
+    menu.append_item(function_item1).append_item(function_item2)
 
-def menuManager(command: str):
-    pass
+    submenu = RpiLCDSubMenu(menu)
+    submenu_item = SubmenuItem("SubMenu (3)", submenu, menu)
+    menu.append_item(submenu_item)
 
+    for key in SF2paths:
+        submenu.append_item(FunctionItem(key[0:14], fooFunction, [key])) 
+
+#    submenu.append_item(FunctionItem("Item 31", fooFunction, [31])).append_item(
+#        FunctionItem("Item 32", fooFunction, [32]))
+
+    submenu.append_item(FunctionItem("Back", exitSubMenu, [submenu]))
+
+    menu.append_item(FunctionItem("Item 4", fooFunction, [4]))
+
+    menu.clearDisplay()
+    menu.start()
+    print("----")
+
+def fooFunction(item_index):
+    """
+    sample method with a parameter
+    """
+    print("item %d pressed" % (item_index))
+
+def nextSF2():
+    """
+    sample method with a parameter
+    """
+    print("nextSF2")
+
+def exitSubMenu(submenu):
+    return submenu.exit()
 
 #endregion ### End Menu Management Setup ###
 
@@ -223,20 +256,27 @@ def my_inccallback(scale_position):
         if not inMenu:
             patchInc()
         else:
-            menuManager("Inc")
-
+            menu.processDown()
+            return time.sleep(0.2)
 
 def my_deccallback(scale_position):
     if scale_position % 2 == 0:
         if not inMenu:
             patchDec()
         else:
-            menuManager("Dec")
-
+            menu.processUp()
+            return time.sleep(0.2)
 
 def my_swcallback():
-    menuManager("Sw")
-
+    global menu
+    global inMenu
+    if not inMenu:
+        menuManager()
+        inMenu = True
+        return time.sleep(0.5)
+    else:
+        menu = menu.processEnter()
+        return time.sleep(0.25)
 
 my_encoder = pyky040.Encoder(CLK=22, DT=23, SW=24)
 my_encoder.setup(scale_min=1,
