@@ -27,10 +27,12 @@ class linuxsampler():
 	# Initialization
 	# ---------------------------------------------------------------------------
 
-	def __init__(self):
+	def __init__(self, controller_id=0):
 		self.name = "LinuxSampler"
 		self.nickname = "LS"
 		self.jackname = "LinuxSampler"
+		self.alsacard = '4,0'
+		self.controller_id = controller_id
 
 		self.sampleDirs = [
 			"/home/pi/soundfonts/sfz",
@@ -57,13 +59,12 @@ class linuxsampler():
 		self.start()
 		self.lscp_connect()
 		self.lscp_get_version()
-		self.reset()
+		#self.reset()
 		self.buildPatchList()
 		self.buildEffectList()
 
 
 	def reset(self):
-		#super().reset()
 		self.ls_chans={}
 		self.ls_init()
 
@@ -159,22 +160,22 @@ class linuxsampler():
 			logging.error("FAILED lscp_send_single(%s): %s" % (command,err))
 			return None
 		line=line.decode()
-		print(line)
+		#print(line)
 		#logging.debug("LSCP RECEIVE => %s" % line)
 		if line[0:2]=="OK":
 			result=self.lscp_get_result_index(line)
-			print('result is: {}'.format(result))
+			#print('result is: {}'.format(result))
 		elif line[0:2]!="OK" and line[0:3]!="ERR" and line[0:3]!="WRN":
 			result=line.splitlines()[0]
 		elif line[0:3]=="ERR":
 			parts=line.split(':')
-			print('Error: line[0:3]=="ERR"')
-			print(line)
+			#print('Error: line[0:3]=="ERR"')
+			#print(line)
 			raise lscp_error("{} ({} {})".format(parts[2],parts[0],parts[1]))
 		elif line[0:3]=="WRN":
 			parts=line.split(':')
-			print('Error: line[0:3]=="WRN"')
-			print(line)
+			#print('Error: line[0:3]=="WRN"')
+			#print(line)
 			raise lscp_warning("{} ({} {})".format(parts[2],parts[0],parts[1]))
 		return result
 
@@ -196,13 +197,13 @@ class linuxsampler():
 				result=self.lscp_get_result_index(line)
 			elif line[0:3]=="ERR":
 				parts=line.split(':')
-				print('Error: line[0:3]=="ERR"')
-				print(line)
+				#print('Error: line[0:3]=="ERR"')
+				#print(line)
 				raise lscp_error("{} ({} {})".format(parts[2],parts[0],parts[1]))
 			elif line[0:3]=="WRN":
 				parts=line.split(':')
-				print('Error: line[0:3]=="WRN"')
-				print(line)
+				#print('Error: line[0:3]=="WRN"')
+				#print(line)
 				raise lscp_warning("{} ({} {})" % (parts[2],parts[0],parts[1]))
 			elif len(line)>3:
 				parts=line.split(sep)
@@ -241,7 +242,7 @@ class linuxsampler():
 	def get_instrument_list(self, sample):
 		result = self.lscp_send_single("LIST FILE INSTRUMENTS '{}'".format(sample))
 		list = result.split(",")
-		print('list is: ' + str(list))
+		#print('list is: ' + str(list))
 		return list
 
 	def get_instrument_info(self, sample, inst):
@@ -263,13 +264,13 @@ class linuxsampler():
 				result = int(parts[0])
 			elif line[0:3]=="ERR":
 				parts=line.split(':')
-				print('Error: line[0:3]=="ERR"')
-				print(line)
+				#print('Error: line[0:3]=="ERR"')
+				#print(line)
 				raise lscp_error("{} ({} {})".format(parts[2],parts[0],parts[1]))
 			elif line[0:3]=="WRN":
 				parts=line.split(':')
-				print('Error: line[0:3]=="WRN"')
-				print(line)
+				#print('Error: line[0:3]=="WRN"')
+				#print(line)
 				raise lscp_warning("{} ({} {})" % (parts[2],parts[0],parts[1]))
 			elif len(line)>3:
 				parts=line.split(': ')
@@ -280,12 +281,12 @@ class linuxsampler():
 
 	def buildPatchList(self):
 		self.patchList = {}
-		print(self.sampleList)
+		#print(self.sampleList)
 		for sample in self.sampleList:
 			file = self.sampleList[sample]
-			print(file)
+			#print(file)
 			for inst in self.get_instrument_list(file):
-				print(inst)
+				#print(inst)
 				dict = self.get_instrument_info(file, inst)
 				name = dict['name']
 				self.patchList[name] = dict
@@ -371,8 +372,8 @@ class linuxsampler():
 		self.lscp_send_single("RESET")
 
 		# Config Audio ALSA Device
-		self.ls_audio_device_id=self.lscp_send_single("CREATE AUDIO_OUTPUT_DEVICE ALSA CARD='4,0'".format(self.jackname))
-		print('ls_audio_device_id is :' + str(self.ls_audio_device_id))
+		self.ls_audio_device_id=self.lscp_send_single("CREATE AUDIO_OUTPUT_DEVICE ALSA CARD='{}'".format(self.alsacard))
+		#print('ls_audio_device_id is :' + str(self.ls_audio_device_id))
 #		for i in range(8):
 #			self.lscp_send_single("SET AUDIO_OUTPUT_CHANNEL_PARAMETER {} {} NAME='CH{}_1'".format(self.ls_audio_device_id, i*2, i))
 #			self.lscp_send_single("SET AUDIO_OUTPUT_CHANNEL_PARAMETER {} {} NAME='CH{}_2'".format(self.ls_audio_device_id, i*2+1, i))
@@ -380,16 +381,16 @@ class linuxsampler():
 
 		# Config MIDI ALSA Device 1
 		self.ls_midi_device_id=self.lscp_send_single("CREATE MIDI_INPUT_DEVICE ALSA ACTIVE='true' NAME='LinuxSampler' PORTS='1'")
-		print('ls_midi_device_id is: ' + str(self.ls_midi_device_id))
+		#print('ls_midi_device_id is: ' + str(self.ls_midi_device_id))
 		#self.lscp_send_single("SET MIDI_INPUT_PORT_PARAMETER %s 0 JACK_BINDINGS=''" % self.ls_midi_device_id)
 		#self.lscp_send_single("SET MIDI_INPUT_PORT_PARAMETER %s 0 NAME='midi_in_0'" % self.ls_midi_device_id)
 
-		self.ls_midi_device_id=self.lscp_send_single("SET MIDI_INPUT_PORT_PARAMETER 0 0 ALSA_SEQ_BINDINGS='24:0'")
-		print('now ls_midi_device_id is: ' + str(self.ls_midi_device_id))
+		self.ls_midi_device_id=self.lscp_send_single("SET MIDI_INPUT_PORT_PARAMETER 0 0 ALSA_SEQ_BINDINGS='{}:0'".format(self.controller_id))
+		#print('now ls_midi_device_id is: ' + str(self.ls_midi_device_id))
 
 		# Global volume level
 		self.lscp_send_single("SET VOLUME 0.45")
-		print('Volume set...')
+		#print('Volume set...')
 
 
 	def switchSample(self, name):
@@ -397,7 +398,7 @@ class linuxsampler():
 			ls_chan_id = self.ls_set_channel()
 		else:
 			ls_chan_id = self.ls_chan_info['chan_id']
-		print('ls_chan_id is: ' + str(ls_chan_id))
+		#print('ls_chan_id is: ' + str(ls_chan_id))
 		#print("LOAD ENGINE {} {}".format(os.path.splitext(sample)[1][1:], ls_chan_id))
 		sampleinfo = self.patchList[name]
 		samplepath = sampleinfo['path']
@@ -406,7 +407,7 @@ class linuxsampler():
 		self.lscp_send_single("LOAD ENGINE {} {}".format(format_family, ls_chan_id))
 		self.sock.settimeout(10)
 		self.lscp_send_single("LOAD INSTRUMENT '{}' {} {}".format(samplepath, inst_id, ls_chan_id))
-		print(self.lscp_send_single("GET CHANNEL INFO {}".format(ls_chan_id)))
+		#print(self.lscp_send_single("GET CHANNEL INFO {}".format(ls_chan_id)))
 		self.sock.settimeout(1)
 		#self.fs.program_select(self.Channel, self.sfid, self.Bank, self.Patch)
 		#self.PatchName = self.fs.channel_info(self.Channel)[3]
@@ -423,7 +424,7 @@ class linuxsampler():
 			if self.lscp_v1_6_supported:
 				self.lscp_send_single("ADD CHANNEL MIDI_INPUT {} {} 0".format(ls_chan_id, self.ls_midi_device_id))
 			else:
-				print("SET CHANNEL MIDI_INPUT_DEVICE {} {}".format(ls_chan_id, 0))
+				#print("SET CHANNEL MIDI_INPUT_DEVICE {} {}".format(ls_chan_id, 0))
 				self.lscp_send_single("SET CHANNEL MIDI_INPUT_DEVICE {} {}".format(ls_chan_id, 0))
 				self.lscp_send_single("SET CHANNEL MIDI_INPUT_PORT {} {}".format(ls_chan_id, 0))
 			self.ls_chan_info={
