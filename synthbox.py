@@ -1,167 +1,135 @@
 #!/usr/bin/env python3
-import fluidsynth, time
+import threading
+from rpilcdmenu import *
+from rpilcdmenu.items import *
+import R64.GPIO as GPIO
+import smbus
+import time
+import jack
+from pyky040 import pyky040
+import includes.alsa as alsa
+import includes.fluidsynth as fluidsynth
+import includes.linuxsampler as linuxsampler
+import includes.aconnect as aconnect
+import includes.characters
+char = includes.characters.Characters.char
+import includes.lv2plugins as lv2
+import includes.jalv as jalv
 
-lastLCDStr = ["                ", "                "]
+plugins_dict = lv2.AvailablePlugins().plugins
+plugins=[]
+active_effects=[]
 
-currChannel = 0
-currSF2Path = ""
-SF2paths = {}
-currPatchName = ""
-currBank = 0
-currPatch = 0
-bankpatchlist = []
-inMenu = False
+menu = RpiLCDMenu(scrolling_menu=True)
+ac = aconnect.aconnect()
+controller_names = list(ac.controllers.keys())
 
-#region ### File Handling Setup ###
-import os, sys
-#os.chdir(os.path.dirname(sys.argv[0])) # change working directory to script's own directory
-for file in os.listdir(os.getcwd() + "/SF2"):
-    if file[-4:].lower() == ".sf2":
-        SF2paths.update({file[:-4]: (os.getcwd() + "/SF2/" + file)})
-#print(SF2paths)
-currSF2Path = SF2paths[list(SF2paths.keys())[0]]
+submenus={}
+backs={}
 
-#endregion ### File Handling Setup ###
+fs = fluidsynth.Fluidsynth()
+ls = linuxsampler.linuxsampler()
+instruments = []
 
-#region ### SF2 Handling Setup ###
-from sf2utils.sf2parse import Sf2File
+alsaMixer = alsa.Alsa('Softmaster',1)
 
+def port_name(port):
+    name = str(port)
+    return name[name.find("\'")+1:name.find("')")]
 
-def getSF2bankpatchlist(sf2path: str):
-    """
-	Gets a nested list of the banks and patches in use by the soundfont
-	(yes it's a horribly nested one liner, but it works)
-	"""
-    with open(sf2path, 'rb') as sf2_file:
-        sf2 = Sf2File(sf2_file)
-
-    return ([[int(i[0]), int(i[1])] for i in [
-        i.split(":")
-        for i in sorted([i[7:14]
-                         for i in str(sf2.presets)[1:-1].split(", ")])[:-1]
-    ]])
-
-
-def switchSF2(sf2path: str, channel: int, bank: int, patch: int):
-    '''
-    Changes the current soundfont, patch, and bank for a given channel, and changes the current values to represent that.
-    '''
-    global currChannel
-    global sfid
-    global bankpatchlist
-    global currPatchName
-    global currBank
-    global currPatch
-    sfid = fs.sfload(sf2path)
-    bankpatchlist = getSF2bankpatchlist(sf2path)
-    currChannel = channel
-    currBank = bank
-    currPatch = patch
-    fs.program_select(currChannel, sfid, currBank, currPatch)
-    currPatchName = fs.channel_info(currChannel)[3]
+jack = jack.Client('PythonClient')
+jack.activate()
+jack_audio_playback=jack.get_ports(is_audio=True, is_input=True, is_physical=True)
+jack_midi_capture=jack.get_ports('capture', is_midi=True, is_input=False, is_physical=True)
+jack_audio_chain = [{'name':None},{'name':'System Playback','in_left':port_name(jack_audio_playback[0]),'in_right':port_name(jack_audio_playback[1])}]
 
 
-#endregion ### End SF2 Handling Setup ###
-
-#region ### FluidSynth Setup ###
-fs = fluidsynth.Synth(gain=1, samplerate=48000)
-fs.setting('synth.polyphony', 32)
-#fs.setting('audio.period-size', 6)
-fs.setting('audio.periods', 4)
-fs.setting('audio.realtime-prio', 99)
-
-fs.start(driver='alsa', midi_driver='alsa_seq')
-
-switchSF2(currSF2Path, 0, 0, 1)
+menuState = {
+    'inMenu':False,
+    'inVolume':False,
+    'inputDisable':False,
+    'activeEngine':None,
+    'activeController':controller_names[0],
+    'activeInstrument':None
+}
 
 
-def patchInc():
-    '''
-    Finds next non empty patch, moving to the next bank if needs be.
-    Max bank 128 before it loops around to 0.
-    '''
-    currBank = fs.channel_info(currChannel)[1]
-    currPatch = fs.channel_info(currChannel)[2]
-    currIndex = bankpatchlist.index([currBank, currPatch])
-    currPatchName = fs.channel_info(currChannel)[3]
 
-    if (currIndex + 1) == len(bankpatchlist):
-        currIndex = 0
-    else:
-        currIndex += 1
-    [currBank, currPatch] = bankpatchlist[currIndex]
-    fs.program_select(currChannel, sfid, currBank, currPatch)
-    print(fs.channel_info(currChannel))
-    display_message(fs.channel_info(currChannel)[3] + '\nBank ' +
-                    str(fs.channel_info(currChannel)[1]) + ' Patch ' +
-                    str(fs.channel_info(currChannel)[2]),
-                    static=True)
+class BaseThread(threading.Thread):
+    def __init__(self, callback=None, callback_args=None, *args, **kwargs):
+        target = kwargs.pop('target')
+        super(BaseThread, self).__init__(target=self.target_with_callback, *args, **kwargs)
+        self.callback = callback
+        self.method = target
+        self.callback_args = callback_args
+
+    def target_with_callback(self):
+        self.method()
+        if self.callback is not None:
+            self.callback(*self.callback_args)
 
 
-def patchDec():
-    '''
-    Finds previous non empty patch, moving to the previous bank if needs be.
-    Max bank 128 after looping around from 0.
-    '''
-    currBank = fs.channel_info(currChannel)[1]
-    currPatch = fs.channel_info(currChannel)[2]
-    currIndex = bankpatchlist.index([currBank, currPatch])
-    currPatchName = fs.channel_info(currChannel)[3]
+def main():
+    rotary_encoder_thread = BaseThread(
+        name='rotary_encoder',
+        target=rotary_encoder
+    )
 
-    if (currIndex - 1) == -1:
-        currIndex = len(bankpatchlist) - 1
-    else:
-        currIndex -= 1
-    [currBank, currPatch] = bankpatchlist[currIndex]
-    fs.program_select(currChannel, sfid, currBank, currPatch)
-    print(fs.channel_info(currChannel))
-    display_message(fs.channel_info(currChannel)[3] + '\nBank ' +
-                    str(fs.channel_info(currChannel)[1]) + ' Patch ' +
-                    str(fs.channel_info(currChannel)[2]),
-                    static=True)
+    # start rotary encoder thread
+    rotary_encoder_thread.start()
+
+    character_creator(0, char['Solid block'])
+    character_creator(4, char['Speaker'])
+    character_creator(5, char['Speaker mirrored'])
+
+    print(fs_instruments)
+    print(ls_instruments)
+    for i in sorted(fs_instruments + ls_instruments):
+        instruments.append(i)
+    print("Instruments list: {}".format(instruments))
 
 
-#endregion ### End FluidSynth Setup ###
+    for i in plugins_dict:
+        plugins.append(i)
+    print("Plugins list: {}".format(plugins))
+
+    for i in jack_audio_chain[1:-1]:
+        active_effects.append(i['name'])
+
+
+    change_library(fs_instruments[0])
+    menuManager()
+    instrument_display()
 
 #region ### LCD Setup ###
 
-from rpilcdmenu import *
-from rpilcdmenu.items import *
+fs_instruments = []
+for inst in fs.SF2paths.keys():
+    fs_instruments.append(inst)
 
-menu = RpiLCDMenu(scrolling_menu=True)
-'''
-def writeLCD(firstline: str, secondline: str):
-	# Writes 2 lines to a 16x2 LCD.
-	# Shortens them by removing vowels if needed.
-	global lastLCDStr
-	#lcd.clear()
-	if len(firstline) > 16:
-		for i in ['a','e','i','o','u']:
-			firstline = firstline.replace(i, '')
-		if len(firstline) > 16:
-			firstline = firstline[0:16]
-	
-	if len(secondline) > 16:
-		for i in ['a','e','i','o','u']:
-			secondline = secondline.replace(i, '')
-		if len(secondline) > 16:
-			secondline = secondline[0:16]
+ls_instruments = []
+for inst in ls.sampleList:
+#    if ls.sampleList[inst]['inst_id'] == str(0):
+    ls_instruments.append(inst)
 
-	#The following added to speed up lcd drawing times under heavy load
-	firstline = "{:<16}".format(firstline)
-	secondline = "{:<16}".format(secondline)
+def instrument_display():
+    message = ["Something's wrong",""]
+    if menuState['activeEngine'] == "fs":
+        print(fs.PatchName)
+        message = [fs.PatchName, "Bank {} Patch {}".format(fs.Bank, fs.Patch)]
+    if menuState['activeEngine'] == "ls":
+        print(ls.PatchName)
+        message = [ls.PatchName, "Instrument {}".format(ls.Patch)]
+    menu.message(message, clear=False)
 
-	for i, c in enumerate([*zip(*[lastLCDStr, [firstline,secondline]])]):
-		for j, d in enumerate(c[0]):
-			if d != c[1][j]:
-				#print("Move cursor to ({},{}) and write {}".format(str(i),str(j), "{:<16}".format(c[1])[j]))
-				if lcd.cursor_pos != (i, j):
-					lcd.cursor_pos = (i, j)
-				lcd.write(LCDCodec().encode(c[1][j])[0])
+def exitMenu():
+    instrument_display()
+    menuState['inMenu'] = False
 
-	lastLCDStr = [firstline, secondline]
-	#lcd.write_string(firstline + '\n\r' + secondline)
-'''
+#def jack_setup():
+#
+#    jack_audio_playback=jack.get_ports(is_audio=True, is_input=True, is_physical=True)
+#    jack_midi_capture=jack.get_ports('capture', is_midi=True, is_input=False, is_physical=True)
 
 
 def display_message(message, clear=False, static=False, autoscroll=False):
@@ -187,6 +155,11 @@ def display_message(message, clear=False, static=False, autoscroll=False):
     return
 
 
+def character_creator(pos, char):
+#    char = eval(char)
+    menu.custom_character(pos, char)
+    return
+
 #endregion ### End LCD Setup ###
 
 #region ### Menu Management Setup ###
@@ -208,27 +181,255 @@ menu = {
 '''
 
 def menuManager():
-    function_item1 = FunctionItem("nextSF2 Function", nextSF2, '')
-    function_item2 = FunctionItem("Volume", fooFunction, [2])
-    menu.append_item(function_item1).append_item(function_item2)
 
-    submenu = RpiLCDSubMenu(menu)
-    submenu_item = SubmenuItem("SubMenu (3)", submenu, menu)
-    menu.append_item(submenu_item)
+    menu_structure = {
+        "Sound Libraries":{
+                "Change Library":{
+                        "type":"list",
+                        "content":instruments,
+                        "function":change_library},
+                "Import from USB":{
+                        "type":"function",
+                        "function":import_from_usb}},
+        "Volume":[volume, 0, alsaMixer.bars],
+        "Effects":{
+                "Available Effects":{
+                        "type":"list",
+                        "content":plugins,
+                        "function":apply_effect},
+                "Active Effects":{
+                        "type":"list",
+                        "content":[ key['name'] for key in jack_audio_chain[1:-1] ],
+                        "function":"submenu"}},
+        "MIDI Settings":{
+                "Set Active Controller":"",
+                "Transpose":"",
+                "Midi Channel":"",
+                "Midi Routing":""},
+        "Power":{
+                "Reconnect Audio Device":"",
+                "Shutdown Safely":"",
+                "Restart":""},
+        "BACK":[exitMenu]}
 
-    for key in SF2paths:
-        submenu.append_item(FunctionItem(key[0:14], fooFunction, [key])) 
-
-#    submenu.append_item(FunctionItem("Item 31", fooFunction, [31])).append_item(
-#        FunctionItem("Item 32", fooFunction, [32]))
-
-    submenu.append_item(FunctionItem("Back", exitSubMenu, [submenu]))
-
-    menu.append_item(FunctionItem("Item 4", fooFunction, [4]))
+    # Build menu items
+    for item in menu_structure:
+        # If the top-level item isn't a dictionary, assume it's a function item
+        if not isinstance(menu_structure[item], dict):
+            menu.append_item(FunctionItem(item, menu_structure[item][0], menu_structure[item][1:]))
+        # If the top-level menu is a dictionary, create a submenu for it
+        elif isinstance(menu_structure[item], dict):
+            submenu = item.replace(" ", "").lower()
+            print("Creating submenu: {}".format(submenu))
+            name = submenu
+            submenu = RpiLCDSubMenu(menu, scrolling_menu=True)
+            submenus[name] = submenu
+            submenu_item = SubmenuItem(item, submenu, menu)
+            menu.append_item(submenu_item)
+            if 'type' in menu_structure[item] and menu_structure[item]['type'] == "list":
+                print('item is {}'.format(item))
+                print('item-type is {}'.format(menu_structure[item]['type']))
+                print("List contents: {}".format(menu_structure[item]['content']))
+                for listitem in menu_structure[item]['content']:
+                    if menu_structure[item]['function'] == 'submenu':
+                        subsubmenu = listitem.replace(" ", "")
+                        name = subsubmenu
+                        subsubmenu = RpiLCDSubMenu(submenu, scrolling_menu=True)
+                        submenus[name] = subsubmenu
+                        subsubmenu_item = SubmenuItem(listitem, subsubmenu, submenu)
+                        submenu.append_item(subsubmenu_item)
+                    else:
+                        submenu.append_item(FunctionItem(listitem, menu_structure[item]['function'], [listitem]))
+                backitem = FunctionItem("Back", exitSubMenu, [submenu])
+                submenu.append_item(backitem)
+                backs['{} back'.format(item)] = backitem
+            else:
+                subitems = menu_structure[item]
+                print("Another list of subitems: {}".format(menu_structure[item]))
+                for subitem in subitems:
+                    if isinstance(subitems[subitem], dict):
+                        subsubmenu = subitem.replace(" ", "")
+                        name = subsubmenu
+                        subsubmenu = RpiLCDSubMenu(submenu, scrolling_menu=True)
+                        submenus[name] = subsubmenu
+                        subsubmenu_item = SubmenuItem(subitem, subsubmenu, submenu)
+                        submenu.append_item(subsubmenu_item)
+                        if subitems[subitem]['type'] and subitems[subitem]['type'] == "list":
+                            print("List contents: {}".format(subitems[subitem]['content']))
+                            subsubsubmenu = str(subitems[subitem]['function'])
+                            name = subsubsubmenu
+                            subsubsubmenu = RpiLCDSubMenu(subsubmenu, scrolling_menu=True)
+                            submenus [name] = subsubsubmenu
+                            for listitem in subitems[subitem]['content']:
+                                subsubmenu.append_item(FunctionItem(listitem, subitems[subitem]['function'], [listitem]))
+                            backitem = FunctionItem("Back", exitSubMenu, [subsubmenu])
+                            subsubmenu.append_item(backitem)
+                            backs['{} back'.format(subitem)] = backitem
+                        else:
+                            subsubmenu.append_item(FunctionItem(subitem, subitems[subitem], ""))
+                backitem = FunctionItem("Back", exitSubMenu, [submenu])
+                submenu.append_item(backitem)
+                backs['{} back'.format(item)] = backitem
 
     menu.clearDisplay()
     menu.start()
-    print("----")
+    print(submenus)
+    print(backs)
+
+def volume(adjust, startbars):
+        print('Volume menu')
+        print(alsaMixer.currVolume)
+        alsaMixer.adjustVolume(adjust)
+        if startbars != alsaMixer.bars or menuState['inVolume'] == False:
+            message = ['   \x04 Volume \x05', alsaMixer.bars]
+            menu.message(message, clear=False)
+        menuState['inVolume'] = True
+        return
+
+###########################################################################
+# File Import
+###########################################################################
+import includes.usbimport as usbimport
+
+def import_from_usb():
+    menuState['inputDisable'] = True
+    menu.message(['Importing from','USB...'])
+    usbimport.import_from_usb()
+    menu.render()
+    menuState['inputDisable'] = False
+
+def change_library(inst):
+    print(inst)
+    if inst == menuState['activeInstrument']:
+        return
+    else:
+        message = [inst, 'Loading...']
+        menu.message(message, clear=True)
+    if inst in fs_instruments:
+        if menuState['activeEngine'] != "fs":
+            ls.ls_release()
+            fs.start()
+            fs_audio_source = jack.get_ports('fluidsynth', is_audio=True)
+            jack_audio_chain[0] = {'name':'FluidSynth Audio Out','out_left':port_name(fs_audio_source[0]),'out_right':port_name(fs_audio_source[1])}
+            update_jack_chain()
+        path = fs.SF2paths[inst]
+        print("path to soundfont: {}".format(path))
+        fs.switchSF2(path, 0, 0, 0)
+#        print(menuState['activeController'])
+#        print(ac.get_fluidsynth_id())
+        midiin = jack.get_ports(is_midi=True, is_output=True)[0]
+        fsmidiout = jack.get_ports(name_pattern='fluidsynth', is_midi=True, is_input=True)[0]
+        try:
+            jack.connect(midiin, fsmidiout)
+        except:
+            pass
+        menuState['activeEngine'] = "fs"
+    elif inst in ls_instruments:
+        if menuState['activeEngine'] != "ls":
+            fs.stop()
+        path = ls.sampleList[inst]
+        ls.switchSample(path)
+        try:
+            jack.connect('LinuxSampler:CH0_1', 'system:playback_1')
+            jack.connect('LinuxSampler:CH0_2', 'system:playback_2')
+            jack.connect('system:midi_capture_1', 'LinuxSampler:midi_in_0')
+        except:
+            pass
+        menuState['activeEngine'] = "ls"
+    menuState['activeInstrument'] = inst
+    menu.render()
+#    exitSubMenu(submenu)
+
+def apply_effect(name):
+    plugin = jalv.jalv(name, plugins_dict[name])
+    jackname = plugin.plugin_jackname
+    if name in [ key['name'] for key in jack_audio_chain[1:-1] ]:
+        i = 2
+        rename = "{} {}".format(name, i)
+        while rename in [ key['name'] for key in jack_audio_chain[1:-1] ]:
+            i += 1
+            rename = "{} {}".format(name, i)
+        name = rename
+    chain_entry = {'name': name,
+                    'instance':plugin,
+                    'in_left': port_name(jack.get_ports('{}:in_l'.format(jackname))[0]),
+                    'in_right': port_name(jack.get_ports('{}:in_r'.format(jackname))[0]),
+                    'out_left': port_name(jack.get_ports('{}:out_l'.format(jackname))[0]),
+                    'out_right': port_name(jack.get_ports('{}:out_r'.format(jackname))[0])}
+    jack_audio_chain.insert(-1, chain_entry)
+    active_effects.insert(-1, name)
+    build_plugin_menu(chain_entry)
+    update_jack_chain()
+
+def build_plugin_menu(plugin):
+    # Create main menu entry for new active effect
+    active_effects_menu = submenus['ActiveEffects']
+    this_effect_menu = RpiLCDSubMenu(active_effects_menu, scrolling_menu=True)
+    this_effect_menuitem = SubmenuItem(plugin['name'], this_effect_menu, active_effects_menu)
+    active_effects_menu.append_item(this_effect_menuitem)
+    submenus[plugin['name']] = this_effect_menuitem
+
+    # Remove and re-add the "BACK" button so it stays at the bottom
+    backitem = FunctionItem("BACK", exitSubMenu, [submenus['effects']])
+    active_effects_menu.remove_item(backs['Active Effects back'])
+    active_effects_menu.append_item(backitem)
+    backs['Active Effects back'] = backitem
+
+    # Create submenus for the new active effect
+    presets_menu = RpiLCDSubMenu(this_effect_menu, scrolling_menu=True)
+    presets_menu_item = SubmenuItem('Presets', presets_menu, this_effect_menu)
+    this_active_effect.append_item(presets_menu_item)
+    ctrls_menu = RpiLCDSubMenu(this_effect_menu, scrolling_menu=True))
+    ctrls_menu_item = SubmenuItem('Controls', presets_menu, this_effect_menu)
+    this_effect_menu.append_item(ctrls_menu_item)
+    this_effect_menu.append_item(FunctionItem('Remove Effect', remove_effect, [jack_audio_chain.index(plugin)]))
+    this_effect_menu.append_item(FunctionItem("BACK", exitSubMenu, [active_effects_menu]))
+
+    # Populate presets menu
+    for preset in plugin.presets:
+        name = preset['label']
+        url = preset['uri']
+        preset_item = FunctionItem(name, plugin.set_preset, [uri])
+        presets_menu.append(preset_item)
+    presets_menu.append_item(FunctionItem("BACK", exitSubMenu, [this_effect_menu]))
+
+    # Populate controls menu
+    presets_menu.append_item(FunctionItem("BACK", exitSubMenu, [this_effect_menu]))
+
+
+
+def remove_effect(index):
+    plugin = jack_audio_chain.pop(index)
+    del plugin['instance']
+    active_effects.remove(plugin['name'])
+    submenus['ActiveEffects'].remove_item(submenus[plugin['name']])
+    update_jack_chain()
+
+
+def update_jack_chain():
+    # Disconnect everything
+    for node in jack_audio_chain:
+        if 'in_left' in node:
+            for connection in jack.get_all_connections(node['in_left']):
+                jack.disconnect(node['in_left'], connection)
+        if 'in_right' in node:
+            for connection in jack.get_all_connections(node['in_right']):
+                jack.disconnect(node['in_right'], connection)
+        if 'out_left' in node:
+            for connection in jack.get_all_connections(node['out_left']):
+                jack.disconnect(node['out_left'], connection)
+        if 'out_right' in node:
+            for connection in jack.get_all_connections(node['out_right']):
+                jack.disconnect(node['out_right'], connection)
+
+    # Remake connections
+    i = 0
+    while i < len(jack_audio_chain)-1:
+        jack.connect(jack_audio_chain[i]['out_left'], jack_audio_chain[i+1]['in_left'])
+        print('Connecting {} to {}...'.format(jack_audio_chain[i]['out_left'], jack_audio_chain[i+1]['in_left']))
+        jack.connect(jack_audio_chain[i]['out_right'], jack_audio_chain[i+1]['in_right'])
+        print('Connecting {} to {}...'.format(jack_audio_chain[i]['out_right'], jack_audio_chain[i+1]['in_right']))
+        i += 1
 
 def fooFunction(item_index):
     """
@@ -248,93 +449,62 @@ def exitSubMenu(submenu):
 #endregion ### End Menu Management Setup ###
 
 #region ### Rotary Encoder Setup ###
-from pyky040 import pyky040
+def rotary_encoder():
 
+    def my_deccallback(scale_position):
+        if scale_position % 2 == 0:  # Trigger every 2 'rotations' as my rotary encoder sends 2 per 1 physical click
+            print("Up")
+            if not menuState['inMenu']:
+#                if menuState['activeEngine'] == "fs":
+#                    fs.nextPatch('down')
+                eval(menuState['activeEngine']).nextPatch('down')
+                instrument_display()
+            elif not menuState['inVolume']:
+                menu.processUp()
+                time.sleep(0.5)
+                return
+            elif menuState['inVolume'] and alsaMixer.currVolume > 0:
+                volume(-2, alsaMixer.bars)
+                print(alsaMixer.currVolume)
+                time.sleep(0.1)
 
-def my_inccallback(scale_position):
-    if scale_position % 2 == 0:  # Trigger every 2 'rotations' as my rotary encoder sends 2 per 1 physical click
-        if not inMenu:
-            patchInc()
-        else:
-            menu.processDown()
-            return time.sleep(0.2)
+    def my_inccallback(scale_position):
+        if scale_position % 2 == 0:
+            print("Down")
+            if not menuState['inMenu']:
+#                if menuState['activeEngine'] == "fs":
+#                    fs.nextPatch('up')
+                eval(menuState['activeEngine']).nextPatch('up')
+                instrument_display()
+            elif not menuState['inVolume']:
+                menu.processDown()
+                time.sleep(0.5)
+                return
+            elif menuState['inVolume'] and alsaMixer.currVolume < 100:
+                volume(2, alsaMixer.bars)
+                print(alsaMixer.currVolume)
+                time.sleep(0.1)
 
-def my_deccallback(scale_position):
-    if scale_position % 2 == 0:
-        if not inMenu:
-            patchDec()
-        else:
-            menu.processUp()
-            return time.sleep(0.2)
+    def my_swcallback():
+        global menu
+        if not menuState['inMenu']:
+            menu.render()
+            menuState['inMenu'] = True
+        elif not menuState['inVolume']:
+            menu = menu.processEnter()
+            time.sleep(0.25)
+            return
+        elif menuState['inVolume']:
+            print("Exit Volume")
+            menuState['inVolume'] = False
+            return menu.render()
 
-def my_swcallback():
-    global menu
-    global inMenu
-    if not inMenu:
-        menuManager()
-        inMenu = True
-        return time.sleep(0.5)
-    else:
-        menu = menu.processEnter()
-        return time.sleep(0.25)
-
-my_encoder = pyky040.Encoder(CLK=22, DT=23, SW=24)
-my_encoder.setup(scale_min=1,
-                 scale_max=100,
-                 step=1,
-                 loop=True,
-                 inc_callback=my_inccallback,
-                 dec_callback=my_deccallback,
-                 sw_callback=my_swcallback)
+    my_encoder = pyky040.Encoder(CLK=22, DT=23, SW=24)
+    my_encoder.setup(scale_min=1, scale_max=100, step=1, loop=True, inc_callback=my_inccallback, dec_callback=my_deccallback, sw_callback=my_swcallback)
+    my_encoder.watch()
 
 #endregion ### End Rotary Encoder Setup ###
 
-#region ### Background Bank & Patch Setup ###
-# This is needed because midi devices can request bank and patch changes themselves, and it's probably easier doing this than intercepting the raw midi calls and handling them oursleves
-import threading
+if __name__ == "__main__":
+    main()
 
-
-def bgBankPatchCheck():
-    '''
-    Checks if the bank and/or patch has changed in the background without us noticing.
-    '''
-    global currPatchName
-    global currBank
-    global currPatch
-
-    while True:
-        if ((currBank != fs.channel_info(currChannel)[1]) |
-            (currPatch != fs.channel_info(currChannel)[2])):
-            currBank = fs.channel_info(currChannel)[1]
-            currPatch = fs.channel_info(currChannel)[2]
-            currPatchName = fs.channel_info(currChannel)[3]
-            if not inMenu:
-                # change the text too
-                display_message(currPatchName + '\nBank ' + str(currBank) +
-                                ' Patch ' + str(currPatch),
-                                static=True)
-            time.sleep(0.1)
-
-
-bg_thread = threading.Thread(target=bgBankPatchCheck, daemon=True)
-#bg_thread.start()
-
-#endregion ### End Background Bank & Patch Setup ###
-
-#bankpatchlist = getSF2bankpatchlist(currSF2Path)
-
-currPatchName = fs.channel_info(currChannel)[3]
-message = currPatchName + "\n" + 'Bank ' + str(currBank) + ' Patch ' + str(
-    currPatch)
-display_message(currPatchName + '\nBank ' + str(currBank) + ' Patch ' +
-                str(currPatch),
-                static=True)
-
-my_encoder.watch()
-'''
-while True:
-	time.sleep(2)
-	patchInc()
-	lcd.clear()
-	writeLCD(currPatchName, 'Bank ' + str(currBank) + ' Patch ' + str(currPatch))
-'''
