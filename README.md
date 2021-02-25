@@ -1,21 +1,17 @@
-# synthbox
-SynthBox: Standalone MIDI sound module based on FluidSynth
+# SampleBox
+Standalone MIDI sound module based on FluidSynth and LinuxSampler. Running on a Rock64 SBC (but should also work with Raspberry Pi or similar), with a 16x2 i2c LCD Display and a single rotary encoder as an interface
 
-Running on a Rock64 SBC, with a 16x2 i2c LCD Display and a single rotary encoder as an interface
-
-Originally based on [synthbox by Septolum](https://github.com/Septolum/synthbox).
-
-Best results achieved when run as superuser and with [AutoAconnect](https://github.com/Septolum/AutoAconnect) running in the background.
-
-Crontab friendly command: `sudo su -c 'sudo -E python3 /home/pi/synthbox/synthbox.py' pi`
-
-Depends on:
+## Depends on:
+- LinuxSampler
+- lilv
 - pyFluidSynth
 - sf2utils
-- RPLCD
+- [JACK Audio Connection Kit (JACK) Client for Python](https://github.com/spatialaudio/jackclient-python/)
+- [rpi-lcd-menu](https://github.com/theophile/rpi-lcd-menu)
 - R64.GPIO
 - pyky040
 
---------
-
-Licenced under a [Creative Commons Attribution-Noncommercial-Share Alike 3.0 License](http://creativecommons.org/licenses/by-nc-sa/3.0/)
+## Credits (code adapted/borrowed from):
+- [synthbox by Septolum](https://github.com/Septolum/synthbox)
+- [Zynthian](https://github.com/zynthian/zynthian-ui/)
+- [jack-audio-tools](https://github.com/SpotlightKid/jack-audio-tools)
