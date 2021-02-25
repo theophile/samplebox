@@ -528,8 +528,11 @@ class Plugin(_ctx):
                     unsorted = dict(s for s in scalepoints_unsorted)
                     values = list(s[0] for s in scalepoints_unsorted)
                     values.sort()
-                    scalepoints = list(
-                        {'value': v, 'label': unsorted[v]} for v in values)
+#                    scalepoints = list(
+#                        {'value': v, 'label': unsorted[v]} for v in values)
+                    scalepoints = {}
+                    for v in values:
+                      scalepoints[v] = unsorted[v]
 
             if "enumeration" in properties and len(scalepoints) <= 1:
                 errors.append(
