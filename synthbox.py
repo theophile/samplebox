@@ -6,6 +6,7 @@ import R64.GPIO as GPIO
 import smbus
 import time
 import jack
+from decimal import *
 from pyky040 import pyky040
 import includes.alsa as alsa
 import includes.fluidsynth as fluidsynth
@@ -87,12 +88,12 @@ def main():
     print(ls_instruments)
     for i in sorted(fs_instruments + ls_instruments):
         instruments.append(i)
-    print("Instruments list: {}".format(instruments))
+    print(f"Instruments list: {instruments}")
 
 
     for i in plugins_dict:
         plugins.append(i)
-    print("Plugins list: {}".format(plugins))
+    print(f"Plugins list: {plugins}")
 
     for i in jack_audio_chain[1:-1]:
         active_effects.append(i['name'])
@@ -117,10 +118,10 @@ def instrument_display():
     message = ["Something's wrong",""]
     if menuState['activeEngine'] == "fs":
         print(fs.PatchName)
-        message = [fs.PatchName, "Bank {} Patch {}".format(fs.Bank, fs.Patch)]
+        message = [fs.PatchName, f"Bank {fs.Bank} Patch {fs.Patch}"]
     if menuState['activeEngine'] == "ls":
         print(ls.PatchName)
-        message = [ls.PatchName, "Instrument {}".format(ls.Patch)]
+        message = [ls.PatchName, f"Instrument {ls.Patch}"]
     menu.message(message, clear=False)
 
 def exitMenu():
@@ -221,16 +222,12 @@ def menuManager():
         # If the top-level menu is a dictionary, create a submenu for it
         elif isinstance(menu_structure[item], dict):
             submenu = item.replace(" ", "").lower()
-            print("Creating submenu: {}".format(submenu))
             name = submenu
             submenu = RpiLCDSubMenu(menu, scrolling_menu=True)
             submenus[name] = submenu
             submenu_item = SubmenuItem(item, submenu, menu)
             menu.append_item(submenu_item)
             if 'type' in menu_structure[item] and menu_structure[item]['type'] == "list":
-                print('item is {}'.format(item))
-                print('item-type is {}'.format(menu_structure[item]['type']))
-                print("List contents: {}".format(menu_structure[item]['content']))
                 for listitem in menu_structure[item]['content']:
                     if menu_structure[item]['function'] == 'submenu':
                         subsubmenu = listitem.replace(" ", "")
@@ -243,10 +240,9 @@ def menuManager():
                         submenu.append_item(FunctionItem(listitem, menu_structure[item]['function'], [listitem]))
                 backitem = FunctionItem("Back", exitSubMenu, [submenu])
                 submenu.append_item(backitem)
-                backs['{} back'.format(item)] = backitem
+                backs[f'{item} back'] = backitem
             else:
                 subitems = menu_structure[item]
-                print("Another list of subitems: {}".format(menu_structure[item]))
                 for subitem in subitems:
                     if isinstance(subitems[subitem], dict):
                         subsubmenu = subitem.replace(" ", "")
@@ -256,7 +252,6 @@ def menuManager():
                         subsubmenu_item = SubmenuItem(subitem, subsubmenu, submenu)
                         submenu.append_item(subsubmenu_item)
                         if subitems[subitem]['type'] and subitems[subitem]['type'] == "list":
-                            print("List contents: {}".format(subitems[subitem]['content']))
                             subsubsubmenu = str(subitems[subitem]['function'])
                             name = subsubsubmenu
                             subsubsubmenu = RpiLCDSubMenu(subsubmenu, scrolling_menu=True)
@@ -265,12 +260,12 @@ def menuManager():
                                 subsubmenu.append_item(FunctionItem(listitem, subitems[subitem]['function'], [listitem]))
                             backitem = FunctionItem("Back", exitSubMenu, [subsubmenu])
                             subsubmenu.append_item(backitem)
-                            backs['{} back'.format(subitem)] = backitem
+                            backs[f'{subitem} back'] = backitem
                         else:
                             subsubmenu.append_item(FunctionItem(subitem, subitems[subitem], ""))
                 backitem = FunctionItem("Back", exitSubMenu, [submenu])
                 submenu.append_item(backitem)
-                backs['{} back'.format(item)] = backitem
+                backs[f'{item} back'] = backitem
 
     menu.clearDisplay()
     menu.start()
@@ -314,7 +309,7 @@ def change_library(inst):
             jack_audio_chain[0] = {'name':'FluidSynth Audio Out','out_left':port_name(fs_audio_source[0]),'out_right':port_name(fs_audio_source[1])}
             update_jack_chain()
         path = fs.SF2paths[inst]
-        print("path to soundfont: {}".format(path))
+        print(f"path to soundfont: {path}")
         fs.switchSF2(path, 0, 0, 0)
         midiin = jack.get_ports(is_midi=True, is_output=True)[0]
         fsmidiout = jack.get_ports(name_pattern='fluidsynth', is_midi=True, is_input=True)[0]
@@ -349,26 +344,21 @@ def apply_effect(name):
     print("if name in [ key['name'] for key in jack_audio_chain[1:-1] ]:")
     if name in [ key['name'] for key in jack_audio_chain[1:-1] ]:
         i = 2
-        rename = "{} {}".format(name, i)
+        rename = f"{name} {i}"
         while rename in [ key['name'] for key in jack_audio_chain[1:-1] ]:
             i += 1
-            rename = "{} {}".format(name, i)
+            rename = f"{name} {i}"
         name = rename
-    print(jackname)
-    print("Define chain_entry")
     chain_entry = {'name': name,
                     'instance':plugin,
-                    'in_left': port_name(jack.get_ports('{}:{}'.format(jackname, plugin.audio_ports['input'][0]['symbol']))[0]),
-                    'in_right': port_name(jack.get_ports('{}:{}'.format(jackname, plugin.audio_ports['input'][1]['symbol']))[0]),
-                    'out_left': port_name(jack.get_ports('{}:{}'.format(jackname, plugin.audio_ports['output'][0]['symbol']))[0]),
-                    'out_right': port_name(jack.get_ports('{}:{}'.format(jackname, plugin.audio_ports['output'][1]['symbol']))[0])}
-    print("jack_audio_chain.insert(-1, chain_entry)")
+                    'in_left': f"{jackname}:{plugin.audio_ports['input'][0]['symbol']}",
+                    'in_right': f"{jackname}:{plugin.audio_ports['input'][1]['symbol']}",
+                    'out_left': f"{jackname}:{plugin.audio_ports['output'][0]['symbol']}",
+                    'out_right': f"{jackname}:{plugin.audio_ports['output'][1]['symbol']}"}
+    print(chain_entry)
     jack_audio_chain.insert(-1, chain_entry)
-    print("active_effects.insert(-1, name)")
     active_effects.insert(-1, name)
-    print("build_plugin_menu(chain_entry)")
     build_plugin_menu(chain_entry)
-    print("update_jack_chain()")
     update_jack_chain()
 
 def build_plugin_menu(chain_entry):
@@ -454,9 +444,9 @@ def update_jack_chain():
     i = 0
     while i < len(jack_audio_chain)-1:
         jack.connect(jack_audio_chain[i]['out_left'], jack_audio_chain[i+1]['in_left'])
-        print('Connecting {} to {}...'.format(jack_audio_chain[i]['out_left'], jack_audio_chain[i+1]['in_left']))
+        print(f"Connecting {jack_audio_chain[i]['out_left']} to {jack_audio_chain[i+1]['in_left']}...")
         jack.connect(jack_audio_chain[i]['out_right'], jack_audio_chain[i+1]['in_right'])
-        print('Connecting {} to {}...'.format(jack_audio_chain[i]['out_right'], jack_audio_chain[i+1]['in_right']))
+        print(f"Connecting {jack_audio_chain[i]['out_right']} to {jack_audio_chain[i+1]['in_right']}...")
         i += 1
 
 
@@ -465,29 +455,60 @@ def effect_control(plugin, control, input=None):
     menuState['activePlugin'] = plugin
     menuState['activeControl'] = control
     name = control['name']
-    value = control['ranges']['current']
-    min = control['ranges']['minimum']
-    max = control['ranges']['maximum']
+    value = format_float(control['ranges']['current'])
+    #value = Decimal(control['ranges']['current']).normalize()
+    min = format_float(control['ranges']['minimum'])
+    #min = Decimal(control['ranges']['minimum']).normalize()
+    max = format_float(control['ranges']['maximum'])
+    #max = Decimal(control['ranges']['maximum']).normalize()
     unit = None
+
+    # If the control is a simple toggle, don't bother parsing options
+    if 'toggled' in control['properties']:
+        toggle = {0:"Off",1:"On"}
+        current = toggle[value]
+        message = [name, str(current).rjust(maxwidth)]
+        menu.message(message, clear=False)
+        return
+
+    # If the control has fixed option set
     if 'enumeration' in control['properties']:
         current = control['scalePoints'][value]
-    elif not control['units']:
+        message = [name, str(current).rjust(maxwidth)]
+        menu.message(message, clear=False)
+        return
+
+    # Format first line
+    if not control['units']:
         current = value
     else:
+        render = control['units']['render']
+        current = render.replace("%f", str(value)).replace(" ", "").replace("%%","%")
         unit = control['units']['symbol']
-        current = "{} {}".format(value, unit)
+        #current = f"{value}{unit}"
     current = str(current)
     if len(name) + len(current) < maxwidth:
         spaces = " " * (maxwidth - len(name) - len(current))
-        firstline = "{}{}{}".format(name, spaces, current)
+        firstline = f"{name}{spaces}{current}"
     else:
         shortname = name[:maxwidth - len(current) - 1]
-        firstline = "{} {}".format(shortname ,current)
-    secondline = "{}~{}{}".format(min, max, unit)
+        firstline = f"{shortname} {current}"
+
+    # Format second line
+    if unit:
+        secondline = f"{min}~{max}{unit}"
+    else:
+        secondline = f"{min}~{max}"
 
     message = [firstline, secondline]
     menu.message(message, clear=False)
     return
+
+def format_float(num):
+    num = str(round(Decimal(num).normalize(),3)).strip("0").rstrip(".")
+    if not num:
+        num = 0
+    return num
 
 def reset_controls(plugin):
     pass
