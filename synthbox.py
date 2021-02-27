@@ -13,10 +13,9 @@ import includes.linuxsampler as linuxsampler
 import includes.aconnect as aconnect
 import includes.characters
 char = includes.characters.Characters.char
-import includes.lv2plugins as lv2
 import includes.jalv as jalv
 
-plugins_dict = lv2.AvailablePlugins().plugins
+plugins_dict = jalv.AvailablePlugins().plugins
 plugins=[]
 active_effects=[]
 
@@ -50,7 +49,9 @@ menuState = {
     'inputDisable':False,
     'activeEngine':None,
     'activeController':controller_names[0],
-    'activeInstrument':None
+    'activeInstrument':None,
+    'activePlugin':None,
+    'activeControl':None
 }
 
 
@@ -277,14 +278,14 @@ def menuManager():
     print(backs)
 
 def volume(adjust, startbars):
-        print('Volume menu')
-        print(alsaMixer.currVolume)
-        alsaMixer.adjustVolume(adjust)
-        if startbars != alsaMixer.bars or menuState['inVolume'] == False:
-            message = ['   \x04 Volume \x05', alsaMixer.bars]
-            menu.message(message, clear=False)
-        menuState['inVolume'] = True
-        return
+    print('Volume menu')
+    print(alsaMixer.currVolume)
+    alsaMixer.adjustVolume(adjust)
+    if startbars != alsaMixer.bars or menuState['inVolume'] == False:
+        message = ['   \x04 Volume \x05', alsaMixer.bars]
+        menu.message(message, clear=False)
+    menuState['inVolume'] = True
+    return
 
 ###########################################################################
 # File Import
@@ -315,8 +316,6 @@ def change_library(inst):
         path = fs.SF2paths[inst]
         print("path to soundfont: {}".format(path))
         fs.switchSF2(path, 0, 0, 0)
-#        print(menuState['activeController'])
-#        print(ac.get_fluidsynth_id())
         midiin = jack.get_ports(is_midi=True, is_output=True)[0]
         fsmidiout = jack.get_ports(name_pattern='fluidsynth', is_midi=True, is_input=True)[0]
         try:
@@ -327,12 +326,15 @@ def change_library(inst):
     elif inst in ls_instruments:
         if menuState['activeEngine'] != "ls":
             fs.stop()
-        path = ls.sampleList[inst]
-        ls.switchSample(path)
+            path = ls.sampleList[inst]
+            ls.switchSample(path)
+            ls_audio_source = jack.get_ports(ls.jackname, is_audio=True)
+            jack_audio_chain[0] = {'name':'LinuxSampler Audio Out','out_left':port_name(ls_audio_source[0]),'out_right':port_name(ls_audio_source[1])}
+            update_jack_chain()
+        midiin = jack.get_ports(is_midi=True, is_output=True)[0]
+        lsmidiout = jack.get_ports(name_pattern=ls.jackname, is_midi=True, is_input=True)[0]
         try:
-            jack.connect('LinuxSampler:CH0_1', 'system:playback_1')
-            jack.connect('LinuxSampler:CH0_2', 'system:playback_2')
-            jack.connect('system:midi_capture_1', 'LinuxSampler:midi_in_0')
+            jack.connect(midiin, lsmidiout)
         except:
             pass
         menuState['activeEngine'] = "ls"
@@ -341,8 +343,10 @@ def change_library(inst):
 #    exitSubMenu(submenu)
 
 def apply_effect(name):
-    plugin = jalv.jalv(name, plugins_dict[name])
+    print("apply effect")
+    plugin = jalv.Plugin(plugins_dict[name])
     jackname = plugin.plugin_jackname
+    print("if name in [ key['name'] for key in jack_audio_chain[1:-1] ]:")
     if name in [ key['name'] for key in jack_audio_chain[1:-1] ]:
         i = 2
         rename = "{} {}".format(name, i)
@@ -350,24 +354,32 @@ def apply_effect(name):
             i += 1
             rename = "{} {}".format(name, i)
         name = rename
+    print(jackname)
+    print("Define chain_entry")
     chain_entry = {'name': name,
                     'instance':plugin,
-                    'in_left': port_name(jack.get_ports('{}:in_l'.format(jackname))[0]),
-                    'in_right': port_name(jack.get_ports('{}:in_r'.format(jackname))[0]),
-                    'out_left': port_name(jack.get_ports('{}:out_l'.format(jackname))[0]),
-                    'out_right': port_name(jack.get_ports('{}:out_r'.format(jackname))[0])}
+                    'in_left': port_name(jack.get_ports('{}:{}'.format(jackname, plugin.audio_ports['input'][0]['symbol']))[0]),
+                    'in_right': port_name(jack.get_ports('{}:{}'.format(jackname, plugin.audio_ports['input'][1]['symbol']))[0]),
+                    'out_left': port_name(jack.get_ports('{}:{}'.format(jackname, plugin.audio_ports['output'][0]['symbol']))[0]),
+                    'out_right': port_name(jack.get_ports('{}:{}'.format(jackname, plugin.audio_ports['output'][1]['symbol']))[0])}
+    print("jack_audio_chain.insert(-1, chain_entry)")
     jack_audio_chain.insert(-1, chain_entry)
+    print("active_effects.insert(-1, name)")
     active_effects.insert(-1, name)
+    print("build_plugin_menu(chain_entry)")
     build_plugin_menu(chain_entry)
+    print("update_jack_chain()")
     update_jack_chain()
 
-def build_plugin_menu(plugin):
+def build_plugin_menu(chain_entry):
+    plugin = chain_entry['instance']
+
     # Create main menu entry for new active effect
     active_effects_menu = submenus['ActiveEffects']
     this_effect_menu = RpiLCDSubMenu(active_effects_menu, scrolling_menu=True)
-    this_effect_menuitem = SubmenuItem(plugin['name'], this_effect_menu, active_effects_menu)
+    this_effect_menuitem = SubmenuItem(plugin.plugin_name, this_effect_menu, active_effects_menu)
     active_effects_menu.append_item(this_effect_menuitem)
-    submenus[plugin['name']] = this_effect_menuitem
+    submenus[plugin.plugin_name] = this_effect_menuitem
 
     # Remove and re-add the "BACK" button so it stays at the bottom
     backitem = FunctionItem("BACK", exitSubMenu, [submenus['effects']])
@@ -375,26 +387,30 @@ def build_plugin_menu(plugin):
     active_effects_menu.append_item(backitem)
     backs['Active Effects back'] = backitem
 
-    # Create submenus for the new active effect
-    presets_menu = RpiLCDSubMenu(this_effect_menu, scrolling_menu=True)
-    presets_menu_item = SubmenuItem('Presets', presets_menu, this_effect_menu)
-    this_active_effect.append_item(presets_menu_item)
-    ctrls_menu = RpiLCDSubMenu(this_effect_menu, scrolling_menu=True))
-    ctrls_menu_item = SubmenuItem('Controls', presets_menu, this_effect_menu)
+    # Create and opulate presets menu
+    if plugin.presets:
+        presets_menu = RpiLCDSubMenu(this_effect_menu, scrolling_menu=True)
+        presets_menu_item = SubmenuItem('Presets', presets_menu, this_effect_menu)
+        this_effect_menu.append_item(presets_menu_item)
+        for preset in plugin.presets:
+            name = preset['label']
+            uri = preset['uri']
+            preset_item = FunctionItem(name, plugin.set_preset, [uri])
+            presets_menu.append_item(preset_item)
+        presets_menu.append_item(FunctionItem("BACK", exitSubMenu, [this_effect_menu]))
+
+    # Create and populate controls menu
+    ctrls_menu = RpiLCDSubMenu(this_effect_menu, scrolling_menu=True)
+    ctrls_menu_item = SubmenuItem('Controls', ctrls_menu, this_effect_menu)
     this_effect_menu.append_item(ctrls_menu_item)
-    this_effect_menu.append_item(FunctionItem('Remove Effect', remove_effect, [jack_audio_chain.index(plugin)]))
+    for control in plugin.controls:
+        ctrl_item = FunctionItem(control['name'], effect_control, [plugin, control])
+        ctrls_menu.append_item(ctrl_item)
+    ctrls_menu.append_item(FunctionItem("RESET ALL CONTROLS", reset_controls, [plugin, control]))
+    ctrls_menu.append_item(FunctionItem("BACK", exitSubMenu, [this_effect_menu]))
+
+    this_effect_menu.append_item(FunctionItem('Remove Effect', remove_effect, [jack_audio_chain.index(chain_entry)]))
     this_effect_menu.append_item(FunctionItem("BACK", exitSubMenu, [active_effects_menu]))
-
-    # Populate presets menu
-    for preset in plugin.presets:
-        name = preset['label']
-        url = preset['uri']
-        preset_item = FunctionItem(name, plugin.set_preset, [uri])
-        presets_menu.append(preset_item)
-    presets_menu.append_item(FunctionItem("BACK", exitSubMenu, [this_effect_menu]))
-
-    # Populate controls menu
-    presets_menu.append_item(FunctionItem("BACK", exitSubMenu, [this_effect_menu]))
 
 
 
@@ -411,16 +427,28 @@ def update_jack_chain():
     for node in jack_audio_chain:
         if 'in_left' in node:
             for connection in jack.get_all_connections(node['in_left']):
-                jack.disconnect(node['in_left'], connection)
+                try:
+                    jack.disconnect(node['in_left'], connection)
+                except:
+                    pass
         if 'in_right' in node:
             for connection in jack.get_all_connections(node['in_right']):
-                jack.disconnect(node['in_right'], connection)
+                try:
+                    jack.disconnect(node['in_right'], connection)
+                except:
+                    pass
         if 'out_left' in node:
             for connection in jack.get_all_connections(node['out_left']):
-                jack.disconnect(node['out_left'], connection)
+                try:
+                    jack.disconnect(node['out_left'], connection)
+                except:
+                    pass
         if 'out_right' in node:
             for connection in jack.get_all_connections(node['out_right']):
-                jack.disconnect(node['out_right'], connection)
+                try:
+                    jack.disconnect(node['out_right'], connection)
+                except:
+                    pass
 
     # Remake connections
     i = 0
@@ -430,6 +458,42 @@ def update_jack_chain():
         jack.connect(jack_audio_chain[i]['out_right'], jack_audio_chain[i+1]['in_right'])
         print('Connecting {} to {}...'.format(jack_audio_chain[i]['out_right'], jack_audio_chain[i+1]['in_right']))
         i += 1
+
+
+def effect_control(plugin, control, input=None):
+    maxwidth = 16
+    menuState['activePlugin'] = plugin
+    menuState['activeControl'] = control
+    name = control['name']
+    value = control['ranges']['current']
+    min = control['ranges']['minimum']
+    max = control['ranges']['maximum']
+    unit = None
+    if 'enumeration' in control['properties']:
+        current = control['scalePoints'][value]
+    elif not control['units']:
+        current = value
+    else:
+        unit = control['units']['symbol']
+        current = "{} {}".format(value, unit)
+    current = str(current)
+    if len(name) + len(current) < maxwidth:
+        spaces = " " * (maxwidth - len(name) - len(current))
+        firstline = "{}{}{}".format(name, spaces, current)
+    else:
+        shortname = name[:maxwidth - len(current) - 1]
+        firstline = "{} {}".format(shortname ,current)
+    secondline = "{}~{}{}".format(min, max, unit)
+
+    message = [firstline, secondline]
+    menu.message(message, clear=False)
+    return
+
+def reset_controls(plugin):
+    pass
+
+
+
 
 def fooFunction(item_index):
     """
