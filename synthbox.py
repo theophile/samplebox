@@ -84,16 +84,11 @@ def main():
     character_creator(4, char['Speaker'])
     character_creator(5, char['Speaker mirrored'])
 
-    print(fs_instruments)
-    print(ls_instruments)
     for i in sorted(fs_instruments + ls_instruments):
         instruments.append(i)
-    print(f"Instruments list: {instruments}")
-
 
     for i in plugins_dict:
         plugins.append(i)
-    print(f"Plugins list: {plugins}")
 
     for i in jack_audio_chain[1:-1]:
         active_effects.append(i['name'])
@@ -117,10 +112,8 @@ for inst in ls.sampleList:
 def instrument_display():
     message = ["Something's wrong",""]
     if menuState['activeEngine'] == "fs":
-        print(fs.PatchName)
         message = [fs.PatchName, f"Bank {fs.Bank} Patch {fs.Patch}"]
     if menuState['activeEngine'] == "ls":
-        print(ls.PatchName)
         message = [ls.PatchName, f"Instrument {ls.Patch}"]
     menu.message(message, clear=False)
 
@@ -269,12 +262,8 @@ def menuManager():
 
     menu.clearDisplay()
     menu.start()
-    print(submenus)
-    print(backs)
 
 def volume(adjust, startbars):
-    print('Volume menu')
-    print(alsaMixer.currVolume)
     alsaMixer.adjustVolume(adjust)
     if startbars != alsaMixer.bars or menuState['inVolume'] == False:
         message = ['   \x04 Volume \x05', alsaMixer.bars]
@@ -295,7 +284,6 @@ def import_from_usb():
     menuState['inputDisable'] = False
 
 def change_library(inst):
-    print(inst)
     if inst == menuState['activeInstrument']:
         return
     else:
@@ -309,7 +297,6 @@ def change_library(inst):
             jack_audio_chain[0] = {'name':'FluidSynth Audio Out','out_left':port_name(fs_audio_source[0]),'out_right':port_name(fs_audio_source[1])}
             update_jack_chain()
         path = fs.SF2paths[inst]
-        print(f"path to soundfont: {path}")
         fs.switchSF2(path, 0, 0, 0)
         midiin = jack.get_ports(is_midi=True, is_output=True)[0]
         fsmidiout = jack.get_ports(name_pattern='fluidsynth', is_midi=True, is_input=True)[0]
@@ -338,10 +325,8 @@ def change_library(inst):
 #    exitSubMenu(submenu)
 
 def apply_effect(name):
-    print("apply effect")
     plugin = jalv.Plugin(plugins_dict[name])
     jackname = plugin.plugin_jackname
-    print("if name in [ key['name'] for key in jack_audio_chain[1:-1] ]:")
     if name in [ key['name'] for key in jack_audio_chain[1:-1] ]:
         i = 2
         rename = f"{name} {i}"
@@ -355,7 +340,6 @@ def apply_effect(name):
                     'in_right': f"{jackname}:{plugin.audio_ports['input'][1]['symbol']}",
                     'out_left': f"{jackname}:{plugin.audio_ports['output'][0]['symbol']}",
                     'out_right': f"{jackname}:{plugin.audio_ports['output'][1]['symbol']}"}
-    print(chain_entry)
     jack_audio_chain.insert(-1, chain_entry)
     active_effects.insert(-1, name)
     build_plugin_menu(chain_entry)
@@ -396,7 +380,7 @@ def build_plugin_menu(chain_entry):
     for control in plugin.controls:
         ctrl_item = FunctionItem(control['name'], effect_control, [plugin, control])
         ctrls_menu.append_item(ctrl_item)
-    ctrls_menu.append_item(FunctionItem("RESET ALL CONTROLS", reset_controls, [plugin, control]))
+    ctrls_menu.append_item(FunctionItem("RESET ALL CONTROLS", reset_controls, [plugin]))
     ctrls_menu.append_item(FunctionItem("BACK", exitSubMenu, [this_effect_menu]))
 
     this_effect_menu.append_item(FunctionItem('Remove Effect', remove_effect, [jack_audio_chain.index(chain_entry)]))
@@ -444,9 +428,7 @@ def update_jack_chain():
     i = 0
     while i < len(jack_audio_chain)-1:
         jack.connect(jack_audio_chain[i]['out_left'], jack_audio_chain[i+1]['in_left'])
-        print(f"Connecting {jack_audio_chain[i]['out_left']} to {jack_audio_chain[i+1]['in_left']}...")
         jack.connect(jack_audio_chain[i]['out_right'], jack_audio_chain[i+1]['in_right'])
-        print(f"Connecting {jack_audio_chain[i]['out_right']} to {jack_audio_chain[i+1]['in_right']}...")
         i += 1
 
 
@@ -460,16 +442,6 @@ def effect_control(plugin, control, input=None):
     min = format_float(control['ranges']['minimum'])
     max = format_float(control['ranges']['maximum'])
     unit = None
-
-#    if input == "enter":
-#        selection = control['ranges'].pop('temp')
-#        menuState['activePlugin'] = None
-#        menuState['activeControl'] = None
-#        if control['ranges']['current'] != selection:
-#            plugin.set_control(control['symbol'], selection)
-#            return display_message([f"Setting {name} to",str(selection)])
-#        else:
-#            return menu.render()
 
     if input is not None:
         if 'toggled' not in control['properties'] and 'enumeration' not in control['properties']:
@@ -504,13 +476,11 @@ def effect_control(plugin, control, input=None):
             current = options[control['ranges']['temp']]
 
     value = format_float(control['ranges']['temp'])
-    print(f"value is {value}")
 
     if input == "enter":
         selection = control['ranges'].pop('temp')
         menuState['activePlugin'] = None
         menuState['activeControl'] = None
-        print(f"selection is {selection}")
         if control['ranges']['current'] != selection:
             plugin.set_control(control['symbol'], selection)
             if 'toggled' in control['properties'] or 'enumeration' in control['properties']:
@@ -523,10 +493,8 @@ def effect_control(plugin, control, input=None):
     if 'toggled' in control['properties']:
         toggle = ["Off","On"]
         current = toggle[int(value)]
-        print(f"current is {current}")
         message = [name, current.rjust(maxwidth)]
         menu.message(message, clear=False)
-        print("sent menu")
         return
 
     # If the control has fixed option set
@@ -543,7 +511,6 @@ def effect_control(plugin, control, input=None):
         render = control['units']['render']
         current = render.replace("%f", str(value)).replace(" ", "").replace("%%","%")
         unit = control['units']['symbol']
-        #current = f"{value}{unit}"
     current = str(current)
     if len(name) + len(current) < maxwidth:
         spaces = " " * (maxwidth - len(name) - len(current))
@@ -569,10 +536,10 @@ def format_float(num):
     return num
 
 def reset_controls(plugin):
-    pass
-
-
-
+    menu.message(["Resetting all plugin","controls to default"], clear=False)
+    for control in plugin.controls:
+        plugin.set_control(control['symbol'], control['ranges']['default'])
+    return menu.render()
 
 def fooFunction(item_index):
     """
