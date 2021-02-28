@@ -394,6 +394,7 @@ def remove_effect(index):
     active_effects.remove(plugin['name'])
     submenus['ActiveEffects'].remove_item(submenus[plugin['name']])
     update_jack_chain()
+    return menu.render()
 
 
 def update_jack_chain():
@@ -460,7 +461,7 @@ def effect_control(plugin, control, input=None):
                     control['ranges']['temp'] = control['ranges']['minimum']
         else:
             if 'toggled' in control['properties']:
-                options = {0:"Off",1:"On"}
+                options = ["Off","On"]
             elif 'enumeration' in control['properties']:
                 options = control['scalePoints']
             if input == "up":
@@ -565,8 +566,6 @@ def rotary_encoder():
         if scale_position % 2 == 0:  # Trigger every 2 'rotations' as my rotary encoder sends 2 per 1 physical click
             print("Up")
             if not menuState['inMenu']:
-#                if menuState['activeEngine'] == "fs":
-#                    fs.nextPatch('down')
                 eval(menuState['activeEngine']).nextPatch('down')
                 instrument_display()
             elif not menuState['inVolume'] and menuState['activeControl'] is None:
@@ -585,8 +584,6 @@ def rotary_encoder():
         if scale_position % 2 == 0:
             print("Down")
             if not menuState['inMenu']:
-#                if menuState['activeEngine'] == "fs":
-#                    fs.nextPatch('up')
                 eval(menuState['activeEngine']).nextPatch('up')
                 instrument_display()
             elif not menuState['inVolume'] and menuState['activeControl'] is None:
