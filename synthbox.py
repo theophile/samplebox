@@ -455,26 +455,84 @@ def effect_control(plugin, control, input=None):
     menuState['activePlugin'] = plugin
     menuState['activeControl'] = control
     name = control['name']
-    value = format_float(control['ranges']['current'])
-    #value = Decimal(control['ranges']['current']).normalize()
+    if 'temp' not in control['ranges']:
+        control['ranges']['temp'] = control['ranges']['current']
     min = format_float(control['ranges']['minimum'])
-    #min = Decimal(control['ranges']['minimum']).normalize()
     max = format_float(control['ranges']['maximum'])
-    #max = Decimal(control['ranges']['maximum']).normalize()
     unit = None
+
+#    if input == "enter":
+#        selection = control['ranges'].pop('temp')
+#        menuState['activePlugin'] = None
+#        menuState['activeControl'] = None
+#        if control['ranges']['current'] != selection:
+#            plugin.set_control(control['symbol'], selection)
+#            return display_message([f"Setting {name} to",str(selection)])
+#        else:
+#            return menu.render()
+
+    if input is not None:
+        if 'toggled' not in control['properties'] and 'enumeration' not in control['properties']:
+            scale_increment = (float(max) - float(min))/100
+            temp = control['ranges']['temp']
+            current = control['ranges']['current']
+            if input == "up":
+                if temp + scale_increment <= control['ranges']['maximum']:
+                    control['ranges']['temp'] = temp + scale_increment
+                else:
+                    control['ranges']['temp'] = control['ranges']['maximum']
+            if input == "down":
+                if temp - scale_increment >= control['ranges']['minimum']:
+                    control['ranges']['temp'] = temp - scale_increment
+                else:
+                    control['ranges']['temp'] = control['ranges']['minimum']
+        else:
+            if 'toggled' in control['properties']:
+                options = {0:"Off",1:"On"}
+            elif 'enumeration' in control['properties']:
+                options = control['scalePoints']
+            if input == "up":
+                if control['ranges']['temp'] + 1 <= len(options) - 1:
+                    control['ranges']['temp'] = float(control['ranges']['temp'] + 1)
+                else:
+                    control['ranges']['temp'] = 0
+            elif input == "down":
+                if control['ranges']['temp'] - 1 >= 0:
+                    control['ranges']['temp'] = float(control['ranges']['temp'] - 1)
+                else:
+                    control['ranges']['temp'] = float(len(options) - 1)
+            current = options[control['ranges']['temp']]
+
+    value = format_float(control['ranges']['temp'])
+    print(f"value is {value}")
+
+    if input == "enter":
+        selection = control['ranges'].pop('temp')
+        menuState['activePlugin'] = None
+        menuState['activeControl'] = None
+        print(f"selection is {selection}")
+        if control['ranges']['current'] != selection:
+            plugin.set_control(control['symbol'], selection)
+            if 'toggled' in control['properties'] or 'enumeration' in control['properties']:
+                selection = current
+            return display_message([f"{name} set to",str(selection)])
+        else:
+            return menu.render()
 
     # If the control is a simple toggle, don't bother parsing options
     if 'toggled' in control['properties']:
-        toggle = {0:"Off",1:"On"}
-        current = toggle[value]
-        message = [name, str(current).rjust(maxwidth)]
+        toggle = ["Off","On"]
+        current = toggle[int(value)]
+        print(f"current is {current}")
+        message = [name, current.rjust(maxwidth)]
         menu.message(message, clear=False)
+        print("sent menu")
         return
 
     # If the control has fixed option set
     if 'enumeration' in control['properties']:
         current = control['scalePoints'][value]
-        message = [name, str(current).rjust(maxwidth)]
+        message = [name, current.rjust(maxwidth)]
         menu.message(message, clear=False)
         return
 
@@ -544,7 +602,7 @@ def rotary_encoder():
 #                    fs.nextPatch('down')
                 eval(menuState['activeEngine']).nextPatch('down')
                 instrument_display()
-            elif not menuState['inVolume']:
+            elif not menuState['inVolume'] and menuState['activeControl'] is None:
                 menu.processUp()
                 time.sleep(0.5)
                 return
@@ -552,6 +610,9 @@ def rotary_encoder():
                 volume(-2, alsaMixer.bars)
                 print(alsaMixer.currVolume)
                 time.sleep(0.1)
+            elif menuState['activeControl'] is not None:
+                effect_control(menuState['activePlugin'], menuState['activeControl'], "down")
+                time.sleep(0.05)
 
     def my_inccallback(scale_position):
         if scale_position % 2 == 0:
@@ -561,7 +622,7 @@ def rotary_encoder():
 #                    fs.nextPatch('up')
                 eval(menuState['activeEngine']).nextPatch('up')
                 instrument_display()
-            elif not menuState['inVolume']:
+            elif not menuState['inVolume'] and menuState['activeControl'] is None:
                 menu.processDown()
                 time.sleep(0.5)
                 return
@@ -569,13 +630,16 @@ def rotary_encoder():
                 volume(2, alsaMixer.bars)
                 print(alsaMixer.currVolume)
                 time.sleep(0.1)
+            elif menuState['activeControl'] is not None:
+                effect_control(menuState['activePlugin'], menuState['activeControl'], "up")
+                time.sleep(0.05)
 
     def my_swcallback():
         global menu
         if not menuState['inMenu']:
             menu.render()
             menuState['inMenu'] = True
-        elif not menuState['inVolume']:
+        elif not menuState['inVolume'] and menuState['activeControl'] is None:
             menu = menu.processEnter()
             time.sleep(0.25)
             return
@@ -583,6 +647,8 @@ def rotary_encoder():
             print("Exit Volume")
             menuState['inVolume'] = False
             return menu.render()
+        elif menuState['activeControl'] is not None:
+            effect_control(menuState['activePlugin'], menuState['activeControl'], "enter")
 
     my_encoder = pyky040.Encoder(CLK=22, DT=23, SW=24)
     my_encoder.setup(scale_min=1, scale_max=100, step=1, loop=True, inc_callback=my_inccallback, dec_callback=my_deccallback, sw_callback=my_swcallback)
