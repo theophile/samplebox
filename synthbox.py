@@ -2,12 +2,11 @@
 import threading
 from rpilcdmenu import *
 from rpilcdmenu.items import *
-import R64.GPIO as GPIO
 import smbus
 import time
 import jack
 from decimal import *
-from pyky040 import pyky040
+import includes.encoder as encoder
 import includes.alsa as alsa
 import includes.fluidsynth as fluidsynth
 import includes.linuxsampler as linuxsampler
@@ -562,41 +561,39 @@ def exitSubMenu(submenu):
 #region ### Rotary Encoder Setup ###
 def rotary_encoder():
 
-    def my_deccallback(scale_position):
-        if scale_position % 2 == 0:  # Trigger every 2 'rotations' as my rotary encoder sends 2 per 1 physical click
-            print("Up")
-            if not menuState['inMenu']:
-                eval(menuState['activeEngine']).nextPatch('down')
-                instrument_display()
-            elif not menuState['inVolume'] and menuState['activeControl'] is None:
-                menu.processUp()
-                time.sleep(0.5)
-                return
-            elif menuState['inVolume'] and alsaMixer.currVolume > 0:
-                volume(-2, alsaMixer.bars)
-                print(alsaMixer.currVolume)
-                time.sleep(0.1)
-            elif menuState['activeControl'] is not None:
-                effect_control(menuState['activePlugin'], menuState['activeControl'], "down")
-                time.sleep(0.05)
+    def my_deccallback():
+        print("Up")
+        if not menuState['inMenu']:
+            eval(menuState['activeEngine']).nextPatch('down')
+            instrument_display()
+        elif not menuState['inVolume'] and menuState['activeControl'] is None:
+            menu.processUp()
+            time.sleep(0.5)
+            return
+        elif menuState['inVolume'] and alsaMixer.currVolume > 0:
+            volume(-2, alsaMixer.bars)
+            print(alsaMixer.currVolume)
+            time.sleep(0.1)
+        elif menuState['activeControl'] is not None:
+            effect_control(menuState['activePlugin'], menuState['activeControl'], "down")
+            time.sleep(0.05)
 
-    def my_inccallback(scale_position):
-        if scale_position % 2 == 0:
-            print("Down")
-            if not menuState['inMenu']:
-                eval(menuState['activeEngine']).nextPatch('up')
-                instrument_display()
-            elif not menuState['inVolume'] and menuState['activeControl'] is None:
-                menu.processDown()
-                time.sleep(0.5)
-                return
-            elif menuState['inVolume'] and alsaMixer.currVolume < 100:
-                volume(2, alsaMixer.bars)
-                print(alsaMixer.currVolume)
-                time.sleep(0.1)
-            elif menuState['activeControl'] is not None:
-                effect_control(menuState['activePlugin'], menuState['activeControl'], "up")
-                time.sleep(0.05)
+    def my_inccallback():
+        print("Down")
+        if not menuState['inMenu']:
+            eval(menuState['activeEngine']).nextPatch('up')
+            instrument_display()
+        elif not menuState['inVolume'] and menuState['activeControl'] is None:
+            menu.processDown()
+            time.sleep(0.5)
+            return
+        elif menuState['inVolume'] and alsaMixer.currVolume < 100:
+            volume(2, alsaMixer.bars)
+            print(alsaMixer.currVolume)
+            time.sleep(0.1)
+        elif menuState['activeControl'] is not None:
+            effect_control(menuState['activePlugin'], menuState['activeControl'], "up")
+            time.sleep(0.05)
 
     def my_swcallback():
         global menu
@@ -614,8 +611,8 @@ def rotary_encoder():
         elif menuState['activeControl'] is not None:
             effect_control(menuState['activePlugin'], menuState['activeControl'], "enter")
 
-    my_encoder = pyky040.Encoder(CLK=22, DT=23, SW=24)
-    my_encoder.setup(scale_min=1, scale_max=100, step=1, loop=True, inc_callback=my_inccallback, dec_callback=my_deccallback, sw_callback=my_swcallback)
+    my_encoder = encoder.Encoder(en_device='/dev/input/by-path/platform-rotary_axis-event', sw_device='/dev/input/by-path/platform-rotary_button-event')
+    my_encoder.setup(inc_callback=my_inccallback, dec_callback=my_deccallback, sw_callback=my_swcallback)
     my_encoder.watch()
 
 #endregion ### End Rotary Encoder Setup ###

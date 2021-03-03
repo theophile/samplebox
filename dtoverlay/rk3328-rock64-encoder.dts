@@ -1,0 +1,31 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	model = "Pine64 Rock64";
+	compatible = "pine64,rock64", "rockchip,rk3328";
+
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			rotary_button {
+				compatible = "gpio-keys";
+				pinctrl-names = "default";
+				rotary_button_enter {
+					label = "ENTER";
+					linux,code = <99>; /* KEY_SYSRQ - see linux/input.h */
+					gpios = <&gpio3 6 1>;
+				};
+			};
+			rotary_axis {
+				/* https://mchehab.fedorapeople.org/kernel_docs/input/devices/rotary-encoder.html */
+				compatible = "rotary-encoder";
+				pinctrl-names = "default";
+				gpios = <&gpio3 4 0>, <&gpio3 5 0>;
+                                linux,axis = <0>; /* REL_X */
+                                rotary-encoder,encoding = "gray";
+				rotary-encoder,relative-axis;
+			};
+		};
+	};
+};
