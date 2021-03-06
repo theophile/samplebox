@@ -131,7 +131,7 @@ def instrument_display():
     menu.message(message, clear=False)
 
 
-def exitMenu():
+def exitMenu(*args):
     instrument_display()
     menuState["inMenu"] = False
 
@@ -245,6 +245,7 @@ def menuManager():
     def build_function_menus(listitem, parent_menu, function, func_args=None):
         if not func_args:
             func_args = listitem
+        print(listitem, function, func_args)
         item = FunctionItem(listitem, function, func_args)
         parent_menu.append_item(item)
 
@@ -609,17 +610,17 @@ def rotary_encoder():
             instrument_display()
         elif not menuState["inVolume"] and menuState["activeControl"] is None:
             menu.processUp()
-            time.sleep(0.5)
+            #time.sleep(0.5)
             return
         elif menuState["inVolume"] and alsaMixer.currVolume > 0:
             volume(-2, alsaMixer.bars)
             print(alsaMixer.currVolume)
-            time.sleep(0.1)
+            #time.sleep(0.1)
         elif menuState["activeControl"] is not None:
             effect_control(
                 menuState["activePlugin"], menuState["activeControl"], "down"
             )
-            time.sleep(0.05)
+            #time.sleep(0.05)
 
     def my_inccallback():
         print("Down")
@@ -628,15 +629,15 @@ def rotary_encoder():
             instrument_display()
         elif not menuState["inVolume"] and menuState["activeControl"] is None:
             menu.processDown()
-            time.sleep(0.5)
+            #time.sleep(0.5)
             return
         elif menuState["inVolume"] and alsaMixer.currVolume < 100:
             volume(2, alsaMixer.bars)
             print(alsaMixer.currVolume)
-            time.sleep(0.1)
+            #time.sleep(0.1)
         elif menuState["activeControl"] is not None:
             effect_control(menuState["activePlugin"], menuState["activeControl"], "up")
-            time.sleep(0.05)
+            #time.sleep(0.05)
 
     def my_swcallback():
         global menu
@@ -645,7 +646,7 @@ def rotary_encoder():
             menuState["inMenu"] = True
         elif not menuState["inVolume"] and menuState["activeControl"] is None:
             menu = menu.processEnter()
-            time.sleep(0.25)
+            #time.sleep(0.25)
             return
         elif menuState["inVolume"]:
             print("Exit Volume")
