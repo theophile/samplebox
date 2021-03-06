@@ -187,7 +187,6 @@ menu = {
 		"Restart":""}}
 """
 
-
 def menuManager():
 
     menu_structure = {
@@ -222,80 +221,41 @@ def menuManager():
         "BACK": [exitMenu],
     }
 
+    def build_submenus(listitem, parent_menu, menu_dict):
+        name = listitem.replace(" ", "")
+        submenu = RpiLCDSubMenu(parent_menu, scrolling_menu=True)
+        submenus[name] = submenu
+        submenu_item = SubmenuItem(listitem, submenu, parent_menu)
+        parent_menu.append_item(submenu_item)
+        if menu_dict.get("type") == "list":
+            for item in menu_dict["content"]:
+                if menu_dict["function"] == "submenu":
+                    build_submenus(item, submenu, None)
+                else:
+                    build_function_menus(item, submenu, menu_dict["function"])
+        else:
+            for item in menu_dict:
+                if isinstance(menu_dict[item], dict):
+                    build_submenus(item, submenu, menu_dict[item])
+        backitem = FunctionItem("Back", exitSubMenu, [submenu])
+        submenu.append_item(backitem)
+        backs[f"{listitem} back"] = backitem
+
+
+    def build_function_menus(listitem, parent_menu, function, func_args=None):
+        if not func_args:
+            func_args = listitem
+        item = FunctionItem(listitem, function, func_args)
+        parent_menu.append_item(item)
+
     # Build menu items
     for item in menu_structure:
         # If the top-level item isn't a dictionary, assume it's a function item
         if not isinstance(menu_structure[item], dict):
-            menu.append_item(
-                FunctionItem(item, menu_structure[item][0], menu_structure[item][1:])
-            )
+            build_function_menus(item, menu, menu_structure[item][0], menu_structure[item][1:])
         # If the top-level menu is a dictionary, create a submenu for it
         elif isinstance(menu_structure[item], dict):
-            submenu = item.replace(" ", "").lower()
-            name = submenu
-            submenu = RpiLCDSubMenu(menu, scrolling_menu=True)
-            submenus[name] = submenu
-            submenu_item = SubmenuItem(item, submenu, menu)
-            menu.append_item(submenu_item)
-            if (
-                "type" in menu_structure[item]
-                and menu_structure[item]["type"] == "list"
-            ):
-                for listitem in menu_structure[item]["content"]:
-                    if menu_structure[item]["function"] == "submenu":
-                        subsubmenu = listitem.replace(" ", "")
-                        name = subsubmenu
-                        subsubmenu = RpiLCDSubMenu(submenu, scrolling_menu=True)
-                        submenus[name] = subsubmenu
-                        subsubmenu_item = SubmenuItem(listitem, subsubmenu, submenu)
-                        submenu.append_item(subsubmenu_item)
-                    else:
-                        submenu.append_item(
-                            FunctionItem(
-                                listitem, menu_structure[item]["function"], [listitem]
-                            )
-                        )
-                backitem = FunctionItem("Back", exitSubMenu, [submenu])
-                submenu.append_item(backitem)
-                backs[f"{item} back"] = backitem
-            else:
-                subitems = menu_structure[item]
-                for subitem in subitems:
-                    if isinstance(subitems[subitem], dict):
-                        subsubmenu = subitem.replace(" ", "")
-                        name = subsubmenu
-                        subsubmenu = RpiLCDSubMenu(submenu, scrolling_menu=True)
-                        submenus[name] = subsubmenu
-                        subsubmenu_item = SubmenuItem(subitem, subsubmenu, submenu)
-                        submenu.append_item(subsubmenu_item)
-                        if (
-                            subitems[subitem]["type"]
-                            and subitems[subitem]["type"] == "list"
-                        ):
-                            subsubsubmenu = str(subitems[subitem]["function"])
-                            name = subsubsubmenu
-                            subsubsubmenu = RpiLCDSubMenu(
-                                subsubmenu, scrolling_menu=True
-                            )
-                            submenus[name] = subsubsubmenu
-                            for listitem in subitems[subitem]["content"]:
-                                subsubmenu.append_item(
-                                    FunctionItem(
-                                        listitem,
-                                        subitems[subitem]["function"],
-                                        [listitem],
-                                    )
-                                )
-                            backitem = FunctionItem("Back", exitSubMenu, [subsubmenu])
-                            subsubmenu.append_item(backitem)
-                            backs[f"{subitem} back"] = backitem
-                        else:
-                            subsubmenu.append_item(
-                                FunctionItem(subitem, subitems[subitem], "")
-                            )
-                backitem = FunctionItem("Back", exitSubMenu, [submenu])
-                submenu.append_item(backitem)
-                backs[f"{item} back"] = backitem
+            build_submenus(item, menu, menu_structure[item])
 
     menu.clearDisplay()
     menu.start()
@@ -416,7 +376,7 @@ def build_plugin_menu(chain_entry):
     submenus[plugin.plugin_name] = this_effect_menuitem
 
     # Remove and re-add the "BACK" button so it stays at the bottom
-    backitem = FunctionItem("BACK", exitSubMenu, [submenus["effects"]])
+    backitem = FunctionItem("BACK", exitSubMenu, [submenus["Effects"]])
     active_effects_menu.remove_item(backs["Active Effects back"])
     active_effects_menu.append_item(backitem)
     backs["Active Effects back"] = backitem
