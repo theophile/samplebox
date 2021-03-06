@@ -5,6 +5,7 @@ from decimal import Decimal
 import jack
 from rpilcdmenu import *
 from rpilcdmenu.items import *
+from includes.jackd import Jackd
 import includes.encoder as encoder
 import includes.alsa as alsa
 import includes.fluidsynth as fluidsynth
@@ -13,6 +14,8 @@ import includes.aconnect as aconnect
 import includes.characters
 import includes.usbimport as usbimport
 import includes.jalv as jalv
+
+jackd = Jackd()
 
 char = includes.characters.Characters.char
 
@@ -31,7 +34,7 @@ fs = fluidsynth.Fluidsynth()
 ls = linuxsampler.linuxsampler()
 instruments = []
 
-alsaMixer = alsa.Alsa("Softmaster", 1)
+alsaMixer = alsa.Alsa("Master", 2)
 
 
 def port_name(port):
