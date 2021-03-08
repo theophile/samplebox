@@ -3,9 +3,8 @@ import threading
 import time
 from decimal import Decimal
 import jack
-from rpilcdmenu import *
-from rpilcdmenu.items import *
 from includes.jackd import Jackd
+from menumanager import MenuManager
 import includes.encoder as encoder
 import includes.alsa as alsa
 import includes.fluidsynth as fluidsynth
@@ -16,6 +15,7 @@ import includes.usbimport as usbimport
 import includes.jalv as jalv
 
 jackd = Jackd()
+menumanager = MenuManager()
 
 char = includes.characters.Characters.char
 
@@ -23,12 +23,9 @@ plugins_dict = jalv.AvailablePlugins().plugins
 plugins = []
 active_effects = []
 
-menu = RpiLCDMenu(scrolling_menu=True)
 ac = aconnect.aconnect()
 controller_names = list(ac.controllers.keys())
 
-submenus = {}
-backs = {}
 
 fs = fluidsynth.Fluidsynth()
 ls = linuxsampler.linuxsampler()
@@ -128,7 +125,7 @@ def instrument_display():
         message = [fs.PatchName, f"Bank {fs.Bank} Patch {fs.Patch}"]
     if menuState["activeEngine"] == "ls":
         message = [ls.PatchName, f"Instrument {ls.Patch}"]
-    menu.message(message, clear=False)
+    menumanager.menu.message(message, clear=False)
 
 
 def exitMenu(*args):
@@ -148,44 +145,28 @@ def display_message(message, clear=False, static=False, autoscroll=False):
     # autoscroll will scroll the message then leave on screen
     # the default will show the message, then render the menu after 2 secondss
 
-    if menu is not None:
+    if menumanager.menu is not None:
         # self.menu.clearDisplay()
         if clear is True:
-            menu.message(message)
+            menumanager.menu.message(message)
             time.sleep(2)
-            return menu.clearDisplay()
+            return menumanager.menu.clearDisplay()
         if static is True:
-            return menu.message(message, autoscroll=False)
+            return menumanager.menu.message(message, autoscroll=False)
         if autoscroll is True:
-            return menu.message(message, autoscroll=True)
-        menu.message(message)
+            return menumanager.menu.message(message, autoscroll=True)
+        menumanager.menu.message(message)
         time.sleep(2)
-        return menu.render()
+        return menumanager.menu.render()
 
 
 def character_creator(pos, char):
-    menu.custom_character(pos, char)
+    menumanager.menu.custom_character(pos, char)
 
 
 # endregion ### End LCD Setup ###
 
 # region ### Menu Management Setup ###
-"""
-menu = {
-	"Bank/Patch Num":"",
-	"Effects":{
-		"Gain":"",
-		"Reverb":"",
-		"Chorus":""},
-	"Midi Channel":"",
-	"Midi Transpose":"",
-	"Midi Routing":"",
-	"Change Soundfont":"",
-	"Power":{
-		"Reconnect Audio Device":"",
-		"Shutdown Safely":"",
-		"Restart":""}}
-"""
 
 def menuManager():
 
@@ -221,52 +202,17 @@ def menuManager():
         "BACK": [exitMenu],
     }
 
-    def build_submenus(listitem, parent_menu, menu_dict):
-        name = listitem.replace(" ", "")
-        submenu = RpiLCDSubMenu(parent_menu, scrolling_menu=True)
-        submenus[name] = submenu
-        submenu_item = SubmenuItem(listitem, submenu, parent_menu)
-        parent_menu.append_item(submenu_item)
-        if menu_dict.get("type") == "list":
-            for item in menu_dict["content"]:
-                if menu_dict["function"] == "submenu":
-                    build_submenus(item, submenu, None)
-                else:
-                    build_function_menus(item, submenu, menu_dict["function"])
-        else:
-            for item in menu_dict:
-                if isinstance(menu_dict[item], dict):
-                    build_submenus(item, submenu, menu_dict[item])
-        backitem = FunctionItem("Back", exitSubMenu, [submenu])
-        submenu.append_item(backitem)
-        backs[f"{listitem} back"] = backitem
+    menumanager.generate_menu(menu_structure)
 
-
-    def build_function_menus(listitem, parent_menu, function, func_args=None):
-        if not func_args:
-            func_args = listitem
-        print(listitem, function, func_args)
-        item = FunctionItem(listitem, function, func_args)
-        parent_menu.append_item(item)
-
-    # Build menu items
-    for item in menu_structure:
-        # If the top-level item isn't a dictionary, assume it's a function item
-        if not isinstance(menu_structure[item], dict):
-            build_function_menus(item, menu, menu_structure[item][0], menu_structure[item][1:])
-        # If the top-level menu is a dictionary, create a submenu for it
-        elif isinstance(menu_structure[item], dict):
-            build_submenus(item, menu, menu_structure[item])
-
-    menu.clearDisplay()
-    menu.start()
+    menumanager.menu.clearDisplay()
+    menumanager.menu.start()
 
 
 def volume(adjust, startbars):
     alsaMixer.adjustVolume(adjust)
     if startbars != alsaMixer.bars or menuState["inVolume"] is False:
         message = ["   \x04 Volume \x05", alsaMixer.bars]
-        menu.message(message, clear=False)
+        menumanager.menu.message(message, clear=False)
     menuState["inVolume"] = True
     return
 
@@ -279,9 +225,9 @@ import includes.usbimport as usbimport
 
 def import_from_usb():
     menuState["inputDisable"] = True
-    menu.message(["Importing from", "USB..."])
+    menumanager.menu.message(["Importing from", "USB..."])
     usbimport.import_from_usb()
-    menu.render()
+    menumanager.menu.render()
     menuState["inputDisable"] = False
 
 
@@ -289,7 +235,7 @@ def change_library(inst):
     if inst == menuState["activeInstrument"]:
         return
     message = [inst, "Loading..."]
-    menu.message(message, clear=True)
+    menumanager.menu.message(message, clear=True)
     if inst in fs_instruments:
         if menuState["activeEngine"] != "fs":
             ls.ls_release()
@@ -334,10 +280,36 @@ def change_library(inst):
             pass
         menuState["activeEngine"] = "ls"
     menuState["activeInstrument"] = inst
-    menu.render()
+    menumanager.menu.render()
 
 
 #    exitSubMenu(submenu)
+
+
+def effect_control(plugin, control, input=None):
+    menuState["activePlugin"] = plugin
+    menuState["activeControl"] = control
+    message = plugin.effect_control(control, input)
+    if input == "enter":
+        menuState["activePlugin"] = None
+        menuState["activeControl"] = None
+        if message is None:
+            menumanager.menu.render()
+            return
+        return display_message(message)
+    menumanager.menu.message(message, clear=False)
+
+def remove_effect(chain_entry):
+    jack_audio_chain.remove(chain_entry)
+    submenu = menumanager.submenus[chain_entry["name"]]
+    del chain_entry["instance"]
+    active_effects.remove(chain_entry["name"])
+    menumanager.submenus["ActiveEffects"].remove_item(submenu)
+    update_jack_chain()
+    display_message([chain_entry["name"], "removed"])
+    if not active_effects:
+        return menumanager.submenus["Effects"].render()
+    return menumanager.submenus["ActiveEffects"].render()
 
 
 def apply_effect(name):
@@ -360,67 +332,9 @@ def apply_effect(name):
     }
     jack_audio_chain.insert(-1, chain_entry)
     active_effects.insert(-1, name)
-    build_plugin_menu(chain_entry)
+    menumanager.build_plugin_menu(chain_entry, remove_effect, effect_control)
     update_jack_chain()
-
-
-def build_plugin_menu(chain_entry):
-    plugin = chain_entry["instance"]
-
-    # Create main menu entry for new active effect
-    active_effects_menu = submenus["ActiveEffects"]
-    this_effect_menu = RpiLCDSubMenu(active_effects_menu, scrolling_menu=True)
-    this_effect_menuitem = SubmenuItem(
-        plugin.plugin_name, this_effect_menu, active_effects_menu
-    )
-    active_effects_menu.append_item(this_effect_menuitem)
-    submenus[plugin.plugin_name] = this_effect_menuitem
-
-    # Remove and re-add the "BACK" button so it stays at the bottom
-    backitem = FunctionItem("BACK", exitSubMenu, [submenus["Effects"]])
-    active_effects_menu.remove_item(backs["Active Effects back"])
-    active_effects_menu.append_item(backitem)
-    backs["Active Effects back"] = backitem
-
-    # Create and opulate presets menu
-    if plugin.presets:
-        presets_menu = RpiLCDSubMenu(this_effect_menu, scrolling_menu=True)
-        presets_menu_item = SubmenuItem("Presets", presets_menu, this_effect_menu)
-        this_effect_menu.append_item(presets_menu_item)
-        for preset in plugin.presets:
-            name = preset["label"]
-            uri = preset["uri"]
-            preset_item = FunctionItem(name, plugin.set_preset, [uri])
-            presets_menu.append_item(preset_item)
-        presets_menu.append_item(FunctionItem("BACK", exitSubMenu, [this_effect_menu]))
-
-    # Create and populate controls menu
-    ctrls_menu = RpiLCDSubMenu(this_effect_menu, scrolling_menu=True)
-    ctrls_menu_item = SubmenuItem("Controls", ctrls_menu, this_effect_menu)
-    this_effect_menu.append_item(ctrls_menu_item)
-    for control in plugin.controls:
-        ctrl_item = FunctionItem(control["name"], effect_control, [plugin, control])
-        ctrls_menu.append_item(ctrl_item)
-    ctrls_menu.append_item(FunctionItem("RESET ALL CONTROLS", reset_controls, [plugin]))
-    ctrls_menu.append_item(FunctionItem("BACK", exitSubMenu, [this_effect_menu]))
-
-    this_effect_menu.append_item(
-        FunctionItem(
-            "Remove Effect", remove_effect, [jack_audio_chain.index(chain_entry)]
-        )
-    )
-    this_effect_menu.append_item(
-        FunctionItem("BACK", exitSubMenu, [active_effects_menu])
-    )
-
-
-def remove_effect(index):
-    plugin = jack_audio_chain.pop(index)
-    del plugin["instance"]
-    active_effects.remove(plugin["name"])
-    submenus["ActiveEffects"].remove_item(submenus[plugin["name"]])
-    update_jack_chain()
-    return menu.render()
+    return menumanager.menu
 
 
 def update_jack_chain():
@@ -463,124 +377,6 @@ def update_jack_chain():
         i += 1
 
 
-def effect_control(plugin, control, input=None):
-    maxwidth = 16
-    menuState["activePlugin"] = plugin
-    menuState["activeControl"] = control
-    name = control["name"]
-    if "temp" not in control["ranges"]:
-        control["ranges"]["temp"] = control["ranges"]["current"]
-    min = format_float(control["ranges"]["minimum"])
-    max = format_float(control["ranges"]["maximum"])
-    unit = None
-
-    if input is not None:
-        if (
-            "toggled" not in control["properties"]
-            and "enumeration" not in control["properties"]
-        ):
-            scale_increment = (float(max) - float(min)) / 100
-            temp = control["ranges"]["temp"]
-            current = control["ranges"]["current"]
-            if input == "up":
-                if temp + scale_increment <= control["ranges"]["maximum"]:
-                    control["ranges"]["temp"] = temp + scale_increment
-                else:
-                    control["ranges"]["temp"] = control["ranges"]["maximum"]
-            if input == "down":
-                if temp - scale_increment >= control["ranges"]["minimum"]:
-                    control["ranges"]["temp"] = temp - scale_increment
-                else:
-                    control["ranges"]["temp"] = control["ranges"]["minimum"]
-        else:
-            if "toggled" in control["properties"]:
-                options = ["Off", "On"]
-            elif "enumeration" in control["properties"]:
-                options = control["scalePoints"]
-            if input == "up":
-                if control["ranges"]["temp"] + 1 <= len(options) - 1:
-                    control["ranges"]["temp"] = float(control["ranges"]["temp"] + 1)
-                else:
-                    control["ranges"]["temp"] = 0
-            elif input == "down":
-                if control["ranges"]["temp"] - 1 >= 0:
-                    control["ranges"]["temp"] = float(control["ranges"]["temp"] - 1)
-                else:
-                    control["ranges"]["temp"] = float(len(options) - 1)
-            current = options[control["ranges"]["temp"]]
-
-    value = format_float(control["ranges"]["temp"])
-
-    if input == "enter":
-        selection = control["ranges"].pop("temp")
-        menuState["activePlugin"] = None
-        menuState["activeControl"] = None
-        if control["ranges"]["current"] != selection:
-            plugin.set_control(control["symbol"], selection)
-            if (
-                "toggled" in control["properties"]
-                or "enumeration" in control["properties"]
-            ):
-                selection = current
-            return display_message([f"{name} set to", str(selection)])
-        else:
-            return menu.render()
-
-    # If the control is a simple toggle, don't bother parsing options
-    if "toggled" in control["properties"]:
-        toggle = ["Off", "On"]
-        current = toggle[int(value)]
-        message = [name, current.rjust(maxwidth)]
-        menu.message(message, clear=False)
-        return
-
-    # If the control has fixed option set
-    if "enumeration" in control["properties"]:
-        current = control["scalePoints"][value]
-        message = [name, current.rjust(maxwidth)]
-        menu.message(message, clear=False)
-        return
-
-    # Format first line
-    if not control["units"]:
-        current = value
-    else:
-        render = control["units"]["render"]
-        current = render.replace("%f", str(value)).replace(" ", "").replace("%%", "%")
-        unit = control["units"]["symbol"]
-    current = str(current)
-    if len(name) + len(current) < maxwidth:
-        spaces = " " * (maxwidth - len(name) - len(current))
-        firstline = f"{name}{spaces}{current}"
-    else:
-        shortname = name[: maxwidth - len(current) - 1]
-        firstline = f"{shortname} {current}"
-
-    # Format second line
-    if unit:
-        secondline = f"{min}~{max}{unit}"
-    else:
-        secondline = f"{min}~{max}"
-
-    message = [firstline, secondline]
-    menu.message(message, clear=False)
-    return
-
-
-def format_float(num):
-    num = str(round(Decimal(num).normalize(), 3)).strip("0").rstrip(".")
-    if not num:
-        num = 0
-    return num
-
-
-def reset_controls(plugin):
-    menu.message(["Resetting all plugin", "controls to default"], clear=False)
-    for control in plugin.controls:
-        plugin.set_control(control["symbol"], control["ranges"]["default"])
-    return menu.render()
-
-
 def fooFunction(item_index):
     """
     sample method with a parameter
@@ -609,7 +405,7 @@ def rotary_encoder():
             eval(menuState["activeEngine"]).nextPatch("down")
             instrument_display()
         elif not menuState["inVolume"] and menuState["activeControl"] is None:
-            menu.processUp()
+            menumanager.menu.processUp()
             #time.sleep(0.5)
             return
         elif menuState["inVolume"] and alsaMixer.currVolume > 0:
@@ -619,8 +415,7 @@ def rotary_encoder():
         elif menuState["activeControl"] is not None:
             effect_control(
                 menuState["activePlugin"], menuState["activeControl"], "down"
-            )
-            #time.sleep(0.05)
+            )            #time.sleep(0.05)
 
     def my_inccallback():
         print("Down")
@@ -628,7 +423,7 @@ def rotary_encoder():
             eval(menuState["activeEngine"]).nextPatch("up")
             instrument_display()
         elif not menuState["inVolume"] and menuState["activeControl"] is None:
-            menu.processDown()
+            menumanager.menu.processDown()
             #time.sleep(0.5)
             return
         elif menuState["inVolume"] and alsaMixer.currVolume < 100:
@@ -640,18 +435,17 @@ def rotary_encoder():
             #time.sleep(0.05)
 
     def my_swcallback():
-        global menu
         if not menuState["inMenu"]:
-            menu.render()
+            menumanager.menu.render()
             menuState["inMenu"] = True
         elif not menuState["inVolume"] and menuState["activeControl"] is None:
-            menu = menu.processEnter()
+            menumanager.menu = menumanager.menu.processEnter()
             #time.sleep(0.25)
             return
         elif menuState["inVolume"]:
             print("Exit Volume")
             menuState["inVolume"] = False
-            return menu.render()
+            return menumanager.menu.render()
         elif menuState["activeControl"] is not None:
             effect_control(
                 menuState["activePlugin"], menuState["activeControl"], "enter"
