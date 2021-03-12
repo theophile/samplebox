@@ -121,9 +121,9 @@ for inst in ls.sampleList:
 
 def instrument_display():
     message = ["Something's wrong", ""]
-    if menuState["activeEngine"] == "fs":
+    if menuState["activeEngine"] == fs:
         message = [fs.PatchName, f"Bank {fs.Bank} Patch {fs.Patch}"]
-    if menuState["activeEngine"] == "ls":
+    if menuState["activeEngine"] == ls:
         message = [ls.PatchName, f"Instrument {ls.Patch}"]
     menumanager.menu.message(message, clear=False)
 
@@ -204,8 +204,8 @@ def menuManager():
 
     menumanager.generate_menu(menu_structure)
 
-    menumanager.menu.clearDisplay()
-    menumanager.menu.start()
+    #menumanager.menu.start()
+    #menumanager.menu.lcd.clear()
 
 
 def volume(adjust, startbars):
@@ -237,7 +237,7 @@ def change_library(inst):
     message = [inst, "Loading..."]
     menumanager.menu.message(message, clear=True)
     if inst in fs_instruments:
-        if menuState["activeEngine"] != "fs":
+        if menuState["activeEngine"] != fs:
             ls.ls_release()
             fs.start()
             fs_audio_source = jack.get_ports("fluidsynth", is_audio=True)
@@ -257,9 +257,9 @@ def change_library(inst):
             jack.connect(midiin, fsmidiout)
         except Exception:
             pass
-        menuState["activeEngine"] = "fs"
+        menuState["activeEngine"] = fs
     elif inst in ls_instruments:
-        if menuState["activeEngine"] != "ls":
+        if menuState["activeEngine"] != ls:
             fs.stop()
             path = ls.sampleList[inst]
             ls.switchSample(path)
@@ -278,7 +278,7 @@ def change_library(inst):
             jack.connect(midiin, lsmidiout)
         except Exception:
             pass
-        menuState["activeEngine"] = "ls"
+        menuState["activeEngine"] = ls
     menuState["activeInstrument"] = inst
     menumanager.menu.render()
 
@@ -402,7 +402,7 @@ def rotary_encoder():
     def my_deccallback():
         print("Up")
         if not menuState["inMenu"]:
-            eval(menuState["activeEngine"]).nextPatch("down")
+            menuState["activeEngine"].nextPatch("down")
             instrument_display()
         elif not menuState["inVolume"] and menuState["activeControl"] is None:
             menumanager.menu.processUp()
@@ -420,7 +420,7 @@ def rotary_encoder():
     def my_inccallback():
         print("Down")
         if not menuState["inMenu"]:
-            eval(menuState["activeEngine"]).nextPatch("up")
+            menuState["activeEngine"].nextPatch("up")
             instrument_display()
         elif not menuState["inVolume"] and menuState["activeControl"] is None:
             menumanager.menu.processDown()
@@ -436,20 +436,40 @@ def rotary_encoder():
 
     def my_swcallback():
         if not menuState["inMenu"]:
-            menumanager.menu.render()
-            menuState["inMenu"] = True
-        elif not menuState["inVolume"] and menuState["activeControl"] is None:
+            return
+            #menuState["inMenu"] = True
+            #return menumanager.menu.render()
+        if not menuState["inVolume"] and menuState["activeControl"] is None:
             menumanager.menu = menumanager.menu.processEnter()
             #time.sleep(0.25)
             return
-        elif menuState["inVolume"]:
+        if menuState["inVolume"]:
             print("Exit Volume")
             menuState["inVolume"] = False
             return menumanager.menu.render()
-        elif menuState["activeControl"] is not None:
+        if menuState["activeControl"] is not None:
             effect_control(
                 menuState["activePlugin"], menuState["activeControl"], "enter"
             )
+        return
+
+    def longpress_callback():
+        if not menuState["inMenu"]:
+            menuState["inMenu"] = True
+            return menumanager.menu.render()
+        #if not menuState["inVolume"] and menuState["activeControl"] is None:
+        #    menumanager.menu = menumanager.menu.processEnter()
+        #    #time.sleep(0.25)
+        #    return
+        #if menuState["inVolume"]:
+        #    print("Exit Volume")
+        #    menuState["inVolume"] = False
+        #    return menumanager.menu.render()
+        #if menuState["activeControl"] is not None:
+        #    effect_control(
+        #        menuState["activePlugin"], menuState["activeControl"], "enter"
+        #    )
+        return
 
     my_encoder = encoder.Encoder(
         en_device="/dev/input/by-path/platform-rotary_axis-event",
@@ -459,6 +479,7 @@ def rotary_encoder():
         inc_callback=my_inccallback,
         dec_callback=my_deccallback,
         sw_callback=my_swcallback,
+        sw_long_callback=longpress_callback
     )
     my_encoder.watch()
 
