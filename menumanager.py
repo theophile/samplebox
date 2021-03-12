@@ -44,8 +44,8 @@ class MenuManager:
 
     def build_function_item(self, listitem, parent_menu, function, func_args=None):
         if not func_args:
-            func_args = listitem
-        item = FunctionItem(listitem, function, [func_args])
+            func_args = [listitem]
+        item = FunctionItem(listitem, function, func_args)
         parent_menu.append_item(item)
 
     def build_plugin_menu(self, chain_entry, remove_effect, effect_control):
