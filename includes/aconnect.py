@@ -18,12 +18,12 @@ class aconnect():
         for controller_id in re.findall(aconnect.pattern, aconnect.string, aconnect.flags):
             controller_name = re.findall("client {}: '(.*)'".format(controller_id), aconnect.string, aconnect.flags)[0]
             self.controllers[controller_name] = controller_id
-        print(self.controllers)
         return self.controllers
 
     def get_fluidsynth_id(self):
         pattern = "client (\d+): '(?=FLUID Synth)"
-        fs_id = re.findall(pattern, aconnect.string, aconnect.flags)
+        string = subprocess.run(["aconnect", "-o"], universal_newlines=True, stdout=subprocess.PIPE).stdout
+        fs_id = re.findall(pattern, string, aconnect.flags)
         if fs_id:
             self.fluidsynth_id = fs_id[0]
             return fs_id[0]
@@ -32,7 +32,8 @@ class aconnect():
 
     def get_linuxsampler_id(self):
         pattern = "client (\d+): '(?=LinuxSampler)"
-        ls_id = re.findall(pattern, aconnect.string, aconnect.flags)
+        string = subprocess.run(["aconnect", "-o"], universal_newlines=True, stdout=subprocess.PIPE).stdout
+        ls_id = re.findall(pattern, string, aconnect.flags)
         if ls_id:
             self.linuxsampler_id = ls_id[0]
             return ls_id[0]
