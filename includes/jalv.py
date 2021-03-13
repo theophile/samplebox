@@ -12,6 +12,7 @@ from os.path import isfile, isdir, dirname
 from subprocess import check_output, getoutput
 from collections import OrderedDict
 from math import fmod
+from decimal import Decimal
 
 
 class _ctx:
@@ -172,7 +173,6 @@ class Plugin(_ctx):
         self.errors = sorted(self.ctx.errors)
         self.warnings = sorted(self.ctx.warnings)
 
-        self.sock = None
         self.proc = None
         self.proc_timeout = 20
         self.proc_start_sleep = None
@@ -189,6 +189,8 @@ class Plugin(_ctx):
                     logging.debug("Jack Name => {}".format(self.jackname))
         self.jalv_send_single("controls")
 
+        self.temp_value = None
+
     def get_jalv_jackname(self):
         client = jack.Client("jname_counter")
         jname = re.sub(
@@ -204,6 +206,11 @@ class Plugin(_ctx):
 
     def set_control(self, symbol, value):
         self.jalv_send_single("{} = {}".format(symbol, value))
+
+    def reset_controls(self):
+        for control in self.plugin.controls:
+            self.set_control(control["symbol"], control["ranges"]["default"])
+        return
 
     def set_preset(self, preset_uri):
         self.jalv_send_single("preset {}".format(preset_uri))
@@ -289,6 +296,12 @@ class Plugin(_ctx):
                 node = node.strip()
 
         return node
+
+    def format_float(self, num):
+        num = str(round(Decimal(num).normalize(), 3)).strip("0").rstrip(".")
+        if not num:
+            num = 0
+        return num
 
     def getfirst(self, obj, strip=True):
         """Return string value of first item returned by obj.get_value(uri).
@@ -887,3 +900,95 @@ class Plugin(_ctx):
         else:
             bundles = [bundlepath]
         return sorted(bundles)
+
+    # ---------------------------------------------------------------------------
+    # Plugin Controls
+    # ---------------------------------------------------------------------------
+
+    def effect_control(self, control, input=None):
+        maxwidth = 16
+        name = control["name"]
+        if self.temp_value is None:
+            self.temp_value = control["ranges"]["current"]
+        min = self.format_float(control["ranges"]["minimum"])
+        max = self.format_float(control["ranges"]["maximum"])
+        unit = None
+
+        if input is not None:
+            if (
+                "toggled" not in control["properties"]
+                and "enumeration" not in control["properties"]
+            ):
+                scale_increment = (float(max) - float(min)) / 100
+                current = control["ranges"]["current"]
+                if input == "up":
+                    if self.temp_value + scale_increment <= control["ranges"]["maximum"]:
+                        self.temp_value += scale_increment
+                    else:
+                        self.temp_value = control["ranges"]["maximum"]
+                if input == "down":
+                    if self.temp_value - scale_increment >= control["ranges"]["minimum"]:
+                        self.temp_value -= scale_increment
+                    else:
+                        self.temp_value = control["ranges"]["minimum"]
+            else:
+                if "toggled" in control["properties"]:
+                    options = ["Off", "On"]
+                elif "enumeration" in control["properties"]:
+                    options = control["scalePoints"]
+                if input == "up":
+                    if self.temp_value + 1 <= len(options) - 1:
+                        self.temp_value = float(self.temp_value + 1)
+                    else:
+                        self.temp_value = 0
+                elif input == "down":
+                    if self.temp_value - 1 >= 0:
+                        self.temp_value = float(self.temp_value - 1)
+                    else:
+                        self.temp_value = float(len(options) - 1)
+                current = options[self.temp_value]
+
+        value = self.format_float(self.temp_value)
+
+        if input == "enter":
+            if control["ranges"]["current"] != self.temp_value:
+                self.set_control(control["symbol"], self.temp_value)
+                return [f"{name} set to", str(self.temp_value)]
+            return
+
+        # If the control is a simple toggle, don't bother parsing options
+        if "toggled" in control["properties"]:
+            toggle = ["Off", "On"]
+            current = toggle[int(value)]
+            message = [name, current.rjust(maxwidth)]
+            return message
+
+        # If the control has fixed option set
+        if "enumeration" in control["properties"]:
+            current = control["scalePoints"][value]
+            message = [name, current.rjust(maxwidth)]
+            return message
+
+        # Format first line
+        if not control["units"]:
+            current = value
+        else:
+            render = control["units"]["render"]
+            current = render.replace("%f", str(value)).replace(" ", "").replace("%%", "%")
+            unit = control["units"]["symbol"]
+        current = str(current)
+        if len(name) + len(current) < maxwidth:
+            spaces = " " * (maxwidth - len(name) - len(current))
+            firstline = f"{name}{spaces}{current}"
+        else:
+            shortname = name[: maxwidth - len(current) - 1]
+            firstline = f"{shortname} {current}"
+
+        # Format second line
+        if unit:
+            secondline = f"{min}~{max}{unit}"
+        else:
+            secondline = f"{min}~{max}"
+
+        message = [firstline, secondline]
+        return message
