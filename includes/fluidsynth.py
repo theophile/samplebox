@@ -16,10 +16,11 @@ class Fluidsynth:
         self.name = "FluidSynth"
         self.driver = "jack"
         self.midi_driver = "jack"
+        self.jackname = "fluidsynth"
         self.command_prompt = "\nFluidSynth initialization completed."
 
     def __del__(self):
-        self.stop()
+        self.release()
         print("Destructor called, Fluidsynth stopped.")
 
     def start(self, sf2path=None):
@@ -42,8 +43,9 @@ class Fluidsynth:
         print("fluidsynth running...")
         return
 
-    def stop(self):
-        self.fs.delete()
+    def release(self):
+        if self.fs:
+            self.fs.delete()
         return
 
     def buildSF2List(self):

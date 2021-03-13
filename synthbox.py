@@ -230,6 +230,13 @@ def import_from_usb():
     menumanager.menu.render()
     menuState["inputDisable"] = False
 
+def change_engine(engine):
+    if menuState["activeEngine"] == engine:
+        return
+    if menuState["activeEngine"] is not None:
+        menuState["activeEngine"].release()
+    engine.start()
+
 
 def change_library(inst):
     if inst == menuState["activeInstrument"]:
@@ -237,48 +244,33 @@ def change_library(inst):
     message = [inst, "Loading..."]
     menumanager.menu.message(message, clear=True)
     if inst in fs_instruments:
-        if menuState["activeEngine"] != fs:
-            ls.ls_release()
-            fs.start()
-            fs_audio_source = jack.get_ports("fluidsynth", is_audio=True)
-            jack_audio_chain[0] = {
-                "name": "FluidSynth Audio Out",
-                "out_left": port_name(fs_audio_source[0]),
-                "out_right": port_name(fs_audio_source[1]),
-            }
-            update_jack_chain()
-        path = fs.SF2paths[inst]
-        fs.switchSF2(path, 0, 0, 0)
-        midiin = jack.get_ports(is_midi=True, is_output=True)[0]
-        fsmidiout = jack.get_ports(
-            name_pattern="fluidsynth", is_midi=True, is_input=True
-        )[0]
-        try:
-            jack.connect(midiin, fsmidiout)
-        except Exception:
-            pass
-        menuState["activeEngine"] = fs
+        engine = fs
+        change_engine(engine)
+        path = engine.SF2paths[inst]
+        engine.switchSF2(path, 0, 0, 0)
     elif inst in ls_instruments:
-        if menuState["activeEngine"] != ls:
-            fs.stop()
-            path = ls.sampleList[inst]
-            ls.switchSample(path)
-            ls_audio_source = jack.get_ports(ls.jackname, is_audio=True)
-            jack_audio_chain[0] = {
-                "name": "LinuxSampler Audio Out",
-                "out_left": port_name(ls_audio_source[0]),
-                "out_right": port_name(ls_audio_source[1]),
-            }
-            update_jack_chain()
+        engine = ls
+        change_engine(engine)
+        path = engine.sampleList[inst]
+        engine.switchSample(path)
+    audio_source = jack.get_ports(engine.jackname, is_audio=True)
+    print(audio_source)
+    jack_audio_chain[0] = {
+        "name": f"{engine.name} Audio Out",
+        "out_left": port_name(audio_source[0]),
+        "out_right": port_name(audio_source[1]),
+    }
+    print(jack_audio_chain[0])
+    update_jack_chain()
+    try:
         midiin = jack.get_ports(is_midi=True, is_output=True)[0]
-        lsmidiout = jack.get_ports(
-            name_pattern=ls.jackname, is_midi=True, is_input=True
+        midiout = jack.get_ports(
+            name_pattern=engine.jackname, is_midi=True, is_input=True
         )[0]
-        try:
-            jack.connect(midiin, lsmidiout)
-        except Exception:
-            pass
-        menuState["activeEngine"] = ls
+        jack.connect(midiin, midiout)
+    except IndexError:
+        print("No MIDI controller detected.")
+    menuState["activeEngine"] = engine
     menuState["activeInstrument"] = inst
     menumanager.menu.render()
 

@@ -1,14 +1,12 @@
 import os
 import re
-import glob
 import logging
 import socket
-import shutil
-import pexpect
 from time import sleep
-from os.path import isfile, isdir
+from os.path import isdir
 from subprocess import check_output
 from collections import OrderedDict
+import pexpect
 
 
 class lscp_error(Exception):
@@ -244,7 +242,6 @@ class linuxsampler:
     def get_instrument_list(self, path):
         result = self.lscp_send_single("LIST FILE INSTRUMENTS '{}'".format(path))
         list = result.split(",")
-        # print('list is: ' + str(list))
         return list
 
     def get_instrument_info(self, path, inst):
@@ -278,17 +275,9 @@ class linuxsampler:
         return result
 
     def buildPatchList(self, path: str):
-        # self.patchList = {}
-        # print(self.sampleList)
-        # for sample in self.sampleList:
-        # file = self.sampleList[sample]
-        # print(file)
         self.BankPatchList = []
         for inst in self.get_instrument_list(path):
-            # print(inst)
             dict = self.get_instrument_info(path, inst)
-            # name = dict['name']
-            # self.patchList[name] = dict
             self.BankPatchList.append(
                 [int(dict["inst_id"]), dict["name"], dict["format_family"]]
             )
@@ -348,7 +337,6 @@ class linuxsampler:
 
     def set_preset(self, preset, preload=False):
         if self.ls_set_preset(preset[3], preset[0]):
-            self.send_ctrl_midi_cc()
             return True
         else:
             return False
@@ -375,7 +363,6 @@ class linuxsampler:
         self.lscp_send_single("RESET")
 
         # Config Audio ALSA Device
-        # self.ls_audio_device_id=self.lscp_send_single("CREATE AUDIO_OUTPUT_DEVICE ALSA CARD='{}'".format(self.alsacard))
         self.ls_audio_device_id = self.lscp_send_single(
             "CREATE AUDIO_OUTPUT_DEVICE JACK ACTIVE='true' CHANNELS='16' NAME='{}'".format(
                 self.jackname
@@ -394,23 +381,15 @@ class linuxsampler:
             )
 
         # Config MIDI JACK Device 1
-        # self.ls_midi_device_id=self.lscp_send_single("CREATE MIDI_INPUT_DEVICE ALSA ACTIVE='true' NAME='LinuxSampler' PORTS='1'")
         self.ls_midi_device_id = self.lscp_send_single(
             "CREATE MIDI_INPUT_DEVICE JACK ACTIVE='true' NAME='LinuxSampler' PORTS='1'"
         )
-        # print('ls_midi_device_id is: ' + str(self.ls_midi_device_id))
-        # self.lscp_send_single("SET MIDI_INPUT_PORT_PARAMETER %s 0 JACK_BINDINGS=''" % self.ls_midi_device_id)
-        # self.lscp_send_single("SET MIDI_INPUT_PORT_PARAMETER %s 0 NAME='midi_in_0'" % self.ls_midi_device_id)
-
-        # self.lscp_send_single("SET MIDI_INPUT_PORT_PARAMETER 0 0 ALSA_SEQ_BINDINGS='{}:0'".format(self.controller_id))
-        # print('now ls_midi_device_id is: ' + str(self.ls_midi_device_id))
 
         # Global volume level
         self.lscp_send_single("SET VOLUME 0.75")
-        # print('Volume set...')
         self.set_midi_chan()
 
-    def ls_release(self):
+    def release(self):
         if self.ls_chan_info:
             self.lscp_send_single(
                 "REMOVE CHANNEL {}".format(self.ls_chan_info["chan_id"])
@@ -434,8 +413,6 @@ class linuxsampler:
         else:
             ls_chan_id = self.ls_chan_info["chan_id"]
         self.BankPatchList = self.buildPatchList(path)
-        # print('ls_chan_id is: ' + str(ls_chan_id))
-        # print("LOAD ENGINE {} {}".format(os.path.splitext(sample)[1][1:], ls_chan_id))
         sampleinfo = self.BankPatchList[inst_id]
         format_family = sampleinfo[2].lower()
         if self.ls_chan_info["ls_engine"] != format_family:
@@ -445,14 +422,11 @@ class linuxsampler:
         self.lscp_send_single(
             "LOAD INSTRUMENT '{}' {} {}".format(path, inst_id, ls_chan_id)
         )
-        # print(self.lscp_send_single("GET CHANNEL INFO {}".format(ls_chan_id)))
         self.sock.settimeout(1)
         self.samplePath = path
         self.Patch = inst_id
         self.PatchName = sampleinfo[1]
         self.Index = self.BankPatchList.index(sampleinfo)
-        # self.fs.program_select(self.Channel, self.sfid, self.Bank, self.Patch)
-        # self.PatchName = self.fs.channel_info(self.Channel)[3]
         return
 
     def nextPatch(self, direction):
@@ -473,9 +447,6 @@ class linuxsampler:
         print(self.BankPatchList[self.Index][1])
         print(self.Index)
         self.switchSample(self.samplePath, self.Index)
-        # print(self.fs.channel_info(self.Channel))
-        # self.PatchName = self.fs.channel_info(self.Channel)[3]
-        # message = [self.PatchName, 'Bank ' + str(self.Bank) + ' Patch ' + str(self.Patch)]
         return
 
     def ls_set_channel(self):
@@ -488,7 +459,6 @@ class linuxsampler:
                     ls_chan_id, self.ls_audio_device_id
                 )
             )
-            # self.lscp_send_single("SET CHANNEL VOLUME %d 1" % ls_chan_id)
 
             # Configure MIDI input
             if self.lscp_v1_6_supported:
@@ -498,7 +468,6 @@ class linuxsampler:
                     )
                 )
             else:
-                # print("SET CHANNEL MIDI_INPUT_DEVICE {} {}".format(ls_chan_id, 0))
                 self.lscp_send_single(
                     "SET CHANNEL MIDI_INPUT_DEVICE {} {}".format(
                         ls_chan_id, self.ls_midi_device_id
@@ -536,7 +505,6 @@ class linuxsampler:
                 self.ls_chan_info["audio_output"] = i
 
                 self.jackname = "{}:CH{}_".format(self.jackname, i)
-                # self.zyngui.zynautoconnect_audio()
 
             # Load instument
             self.sock.settimeout(10)
@@ -551,8 +519,8 @@ class linuxsampler:
         if self.ls_chan_info:
             chan_id = self.ls_chan_info["chan_id"]
             self.lscp_send_single("RESET CHANNEL {}".format(chan_id))
+
             # Remove sampler channel
-            # if self.lscp_v1_6_supported:
             self.lscp_send_single("REMOVE CHANNEL MIDI_INPUT {}".format(chan_id))
             self.lscp_send_single("REMOVE CHANNEL {}".format(chan_id))
             self.ls_chan_info = None
