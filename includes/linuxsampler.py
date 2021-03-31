@@ -70,23 +70,25 @@ class linuxsampler:
     # Subproccess Management & IPC
     # ---------------------------------------------------------------------------
     def start(self):
-        if not self.proc:
-            logging.info("Starting Engine {}".format(self.name))
-            logging.debug("Command: {}".format(self.command))
-            if self.command_env:
-                self.proc = pexpect.spawn(
-                    self.command, timeout=self.proc_timeout, env=self.command_env
-                )
-            else:
-                self.proc = pexpect.spawn(self.command, timeout=self.proc_timeout)
-            self.proc.delaybeforesend = 0
-            output = self.proc_get_output()
-            if self.proc_start_sleep:
-                sleep(self.proc_start_sleep)
-            self.lscp_connect()
-            self.lscp_get_version()
-            # self.reset()
-            return output
+        if self.proc:
+            return
+
+        logging.info("Starting Engine {}".format(self.name))
+        logging.debug("Command: {}".format(self.command))
+        if self.command_env:
+            self.proc = pexpect.spawn(
+                self.command, timeout=self.proc_timeout, env=self.command_env
+            )
+        else:
+            self.proc = pexpect.spawn(self.command, timeout=self.proc_timeout)
+        self.proc.delaybeforesend = 0
+        output = self.proc_get_output()
+        if self.proc_start_sleep:
+            sleep(self.proc_start_sleep)
+        self.lscp_connect()
+        self.lscp_get_version()
+        # self.reset()
+        return output
 
     def stop(self):
         if self.proc:
@@ -108,9 +110,8 @@ class linuxsampler:
         if self.proc:
             # logging.debug("proc command: "+cmd)
             self.proc.sendline(cmd)
-            out = self.proc_get_output()
             # logging.debug("proc output:\n{}".format(out))
-            return out
+            return self.proc_get_output()
 
     def lscp_connect(self):
         logging.info("Connecting with LinuxSampler Server...")
@@ -164,14 +165,14 @@ class linuxsampler:
         if line[0:2] == "OK":
             result = self.lscp_get_result_index(line)
             # print('result is: {}'.format(result))
-        elif line[0:2] != "OK" and line[0:3] != "ERR" and line[0:3] != "WRN":
+        elif line[0:3] not in ["ERR", "WRN"]:
             result = line.splitlines()[0]
         elif line[0:3] == "ERR":
             parts = line.split(":")
             # print('Error: line[0:3]=="ERR"')
             # print(line)
             raise lscp_error("{} ({} {})".format(parts[2], parts[0], parts[1]))
-        elif line[0:3] == "WRN":
+        else:
             parts = line.split(":")
             # print('Error: line[0:3]=="WRN"')
             # print(line)
@@ -234,15 +235,14 @@ class linuxsampler:
             for file in [
                 os.path.join(dp, f) for dp, dn, fn in os.walk(dir) for f in fn
             ]:
-                if file[-4:].lower() == ".sfz" or file[-4:].lower() == ".gig":
+                if file[-4:].lower() in [".sfz", ".gig"]:
                     name = os.path.splitext(os.path.basename(file))[0]
                     self.sampleList.update({name: file})
         return self.sampleList[list(self.sampleList.keys())[0]]
 
     def get_instrument_list(self, path):
         result = self.lscp_send_single("LIST FILE INSTRUMENTS '{}'".format(path))
-        list = result.split(",")
-        return list
+        return result.split(",")
 
     def get_instrument_info(self, path, inst):
         command = "GET FILE INSTRUMENT INFO '{}' {}".format(path, inst)
@@ -308,7 +308,6 @@ class linuxsampler:
     @staticmethod
     def _get_preset_list(bank):
         logging.info("Getting Preset List for %s" % bank[2])
-        i = 0
         preset_list = []
         preset_dpath = bank[0]
         if os.path.isdir(preset_dpath):
@@ -318,6 +317,7 @@ class linuxsampler:
             cmd = "find '" + preset_dpath + "' -maxdepth 2 -type f -name '*.gig'"
             output = output + "\n" + check_output(cmd, shell=True).decode("utf8")
             lines = output.split("\n")
+            i = 0
             for f in lines:
                 if f:
                     filehead, filetail = os.path.split(f)
@@ -329,24 +329,18 @@ class linuxsampler:
                         preset_list.append(
                             [f, i, title, engine, "{}.{}".format(filename, filext)]
                         )
-                        i = i + 1
+                        i += 1
         return preset_list
 
     def get_preset_list(self, bank):
         return self._get_preset_list(bank)
 
     def set_preset(self, preset, preload=False):
-        if self.ls_set_preset(preset[3], preset[0]):
-            return True
-        else:
-            return False
+        return bool(self.ls_set_preset(preset[3], preset[0]))
 
     def cmp_presets(self, preset1, preset2):
         try:
-            if preset1[0] == preset2[0] and preset1[3] == preset2[3]:
-                return True
-            else:
-                return False
+            return preset1[0] == preset2[0] and preset1[3] == preset2[3]
         except:
             return False
 
@@ -440,7 +434,7 @@ class linuxsampler:
             else:
                 self.Index += 1
         if direction == "down":
-            if (self.Index - 1) == -1:
+            if self.Index == 0:
                 self.Index = len(self.BankPatchList) - 1
             else:
                 self.Index -= 1

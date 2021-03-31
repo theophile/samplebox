@@ -41,9 +41,7 @@ class Encoder:
             assert callable(params["sw_long_callback"])
             self.sw_long_callback = params["sw_long_callback"]
         if "sw_debounce_time" in params:
-            assert isinstance(params["sw_debounce_time"], int) or isinstance(
-                params["sw_debounce_time"], float
-            )
+            assert isinstance(params["sw_debounce_time"], (int, float))
             self.sw_debounce_time = params["sw_debounce_time"]
 
     def _switch_press(self, long=False):
