@@ -96,7 +96,7 @@ class Fluidsynth:
             else:
                 self.Index += 1
         if direction == "down":
-            if (self.Index - 1) == -1:
+            if self.Index == 0:
                 self.Index = len(self.BankPatchList) - 1
             else:
                 self.Index -= 1
@@ -104,11 +104,10 @@ class Fluidsynth:
         self.fs.program_select(self.Channel, self.sfid, self.Bank, self.Patch)
         print(self.fs.channel_info(self.Channel))
         self.PatchName = self.fs.channel_info(self.Channel)[3]
-        message = [
+        return [
             self.PatchName,
             "Bank " + str(self.Bank) + " Patch " + str(self.Patch),
         ]
-        return message
 
     def bgBankPatchCheck(self):
         """

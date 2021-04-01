@@ -240,20 +240,22 @@ class Plugin(_ctx):
     # Subproccess Management & IPC
     # ---------------------------------------------------------------------------
     def start(self):
-        if not self.proc:
-            logging.info("Starting Engine {}".format(self.name))
-            logging.debug("Command: {}".format(self.command))
-            if self.command_env:
-                self.proc = pexpect.spawn(
-                    self.command, timeout=self.proc_timeout, env=self.command_env
-                )
-            else:
-                self.proc = pexpect.spawn(self.command, timeout=self.proc_timeout)
-            self.proc.delaybeforesend = 0
-            output = self.proc_get_output()
-            if self.proc_start_sleep:
-                sleep(self.proc_start_sleep)
-            return output
+        if self.proc:
+            return
+
+        logging.info("Starting Engine {}".format(self.name))
+        logging.debug("Command: {}".format(self.command))
+        if self.command_env:
+            self.proc = pexpect.spawn(
+                self.command, timeout=self.proc_timeout, env=self.command_env
+            )
+        else:
+            self.proc = pexpect.spawn(self.command, timeout=self.proc_timeout)
+        self.proc.delaybeforesend = 0
+        output = self.proc_get_output()
+        if self.proc_start_sleep:
+            sleep(self.proc_start_sleep)
+        return output
 
     def stop(self):
         if self.proc:
@@ -274,8 +276,7 @@ class Plugin(_ctx):
     def proc_cmd(self, cmd):
         if self.proc:
             self.proc.sendline(cmd)
-            out = self.proc_get_output()
-            return out
+            return self.proc_get_output()
 
     # ---------------------------------------------------------------------------
     # Plugin Information & Parameters
@@ -558,9 +559,7 @@ class Plugin(_ctx):
                         continue
 
                     if is_int:
-                        if value.is_int():
-                            value = int(value)
-                        else:
+                        if not value.is_int():
                             value = float(value)
                             if fmod(value, 1.0) == 0.0:
                                 warnings.append(
@@ -572,7 +571,7 @@ class Plugin(_ctx):
                                     "port '%s' has integer property but scalepoint '%s' value has non-zero decimals"
                                     % (portname, label)
                                 )
-                            value = int(value)
+                        value = int(value)
                     else:
                         if value.is_int():
                             warnings.append(
